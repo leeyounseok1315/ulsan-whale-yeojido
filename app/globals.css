@@ -1,0 +1,112 @@
+@import url("https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap");
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
+@import "tailwindcss";
+
+@theme {
+  /* 한지 — 따뜻하되 흔한 크림(#F4F1EA)보다 더 흙빛으로 차별화 */
+  --color-paper: #e3d8be;
+  --color-paper-deep: #d3c39e;
+  --color-paper-light: #efe7d4;
+  /* 송연먹 */
+  --color-ink: #2a2118;
+  --color-ink-soft: #5a4b38;
+  /* 보조 텍스트용 — WCAG AA 대비 확보 위해 한지 위 4.5:1 이상으로 짙게 */
+  --color-ink-faint: #6f5c3f;
+  /* 인주(印朱) — 시그니처 강조색, 절제해서만 사용 */
+  --color-seal: #b5402e;
+  --color-seal-deep: #8f2f20;
+  /* 쪽빛 바다·강 */
+  --color-water: #3c5a63;
+  /* 옅은 산녹 */
+  --color-jade: #76845f;
+
+  --font-display: "Nanum Myeongjo", "Apple SD Gothic Neo", serif;
+  --font-body: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 한지 결 — 미세 노이즈 오버레이 (과하지 않게) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 불투명 한지 배경 — 지도/상태화면 등 컨테이너가 전역 그레인 위에 한지 면을 깔 때 사용 */
+.paper-grain {
+  background-color: var(--color-paper);
+}
+
+/* 접근성: 키보드 포커스 가시성 */
+:where(a, button, [tabindex], [role="button"]):focus-visible {
+  outline: 2.5px solid var(--color-seal);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── 모션 (reduced motion 존중) ── */
+@keyframes wy-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes wy-swim {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(2%, -2.5%, 0) rotate(-1.5deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+@keyframes wy-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.wy-draw path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: wy-draw 2.1s ease forwards;
+}
+.wy-swim {
+  animation: wy-swim 7s ease-in-out infinite;
+}
+.wy-fade-up {
+  opacity: 0;
+  animation: wy-fade-up 0.8s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .wy-draw path {
+    stroke-dashoffset: 0;
+  }
+  .wy-fade-up {
+    opacity: 1;
+  }
+}
