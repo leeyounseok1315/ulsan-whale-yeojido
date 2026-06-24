@@ -1,43 +1,44 @@
 import type { RawTourItem, WhaleSpot } from "./types";
-import { MOCK_RAW_ITEMS } from "./mock/spots";
 import { toWhaleSpot } from "./adapter";
-import { cached } from "./cache";
-import { areaBasedList } from "./tourapi";
+import { cached, setCache } from "./cache";
+import { collectAndNormalize, isMockMode } from "./collect";
+import { recordBatch } from "./metrics";
 
-// BFF 데이터 서비스 레이어 — 캐시 우선 조회 → 미스 시 mock 또는 원격 수집 → 테마 태깅.
+// BFF 데이터 서비스 레이어 — 캐시 우선 조회 → 미스 시 수집 파이프라인 → 테마 태깅.
 // app/api(BFF)에서만 import. 캐시 키 버저닝으로 큐레이션 변경을 반영한다.
 
-const CONTENT_TYPES = ["12", "14", "15", "25", "39", "32"];
 const CACHE_KEY = "spots:all:v1";
 const TTL_MS = 1000 * 60 * 30; // 30분 (야간 배치 갱신 주기 내 캐시 적중)
 
-/** serviceKey 미발급이거나 USE_MOCK_DATA=true면 mock으로 동작 (W1~W2). */
-export function isMockMode(): boolean {
-  return process.env.USE_MOCK_DATA === "true" || !process.env.TOUR_API_SERVICE_KEY;
+/** 정규화된 원시 → 고래 테마 스팟. core 또는 연관도 0.3 이상만, 핵심 스팟 우선 정렬. */
+function buildSpots(items: RawTourItem[]): WhaleSpot[] {
+  return items
+    .map(toWhaleSpot)
+    .filter((s) => s.isCore || s.relevance >= 0.3)
+    .sort((a, b) => Number(b.isCore) - Number(a.isCore) || b.relevance - a.relevance);
 }
 
-async function collectRaw(): Promise<RawTourItem[]> {
-  if (isMockMode()) return MOCK_RAW_ITEMS;
-  const all: RawTourItem[] = [];
-  for (const ct of CONTENT_TYPES) {
-    // W2: 전 페이지 순회로 확장. 현재는 1페이지(100건).
-    const items = await areaBasedList(ct, 1, 100);
-    all.push(...items);
-  }
-  return all;
-}
-
-/** 고래 테마 스팟 전체 (core 또는 연관도 0.3 이상). 핵심 스팟 우선 정렬. */
 export async function getSpots(): Promise<WhaleSpot[]> {
-  return cached(CACHE_KEY, TTL_MS, async () => {
-    const raw = await collectRaw();
-    return raw
-      .map(toWhaleSpot)
-      .filter((s) => s.isCore || s.relevance >= 0.3)
-      .sort((a, b) => Number(b.isCore) - Number(a.isCore) || b.relevance - a.relevance);
-  });
+  return cached(CACHE_KEY, TTL_MS, async () => buildSpots((await collectAndNormalize()).items));
 }
 
 export async function getSpot(id: string): Promise<WhaleSpot | null> {
   return (await getSpots()).find((s) => s.id === id) ?? null;
 }
+
+/** 배치/수집 트리거 — 강제 재수집 → 캐시 갱신 → 배치 이력 기록. (Vercel Cron·수집 스크립트가 호출) */
+export async function refreshSpots() {
+  const start = Date.now();
+  try {
+    const { items, stats } = await collectAndNormalize();
+    const spots = buildSpots(items);
+    await setCache(CACHE_KEY, TTL_MS, spots);
+    recordBatch(true, spots.length);
+    return { ok: true as const, count: spots.length, normalize: stats, durationMs: Date.now() - start };
+  } catch (err) {
+    recordBatch(false, 0);
+    throw err;
+  }
+}
+
+export { isMockMode };
