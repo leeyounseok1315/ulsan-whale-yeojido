@@ -6,14 +6,27 @@ import { canCall, quotaStatus, recordCall } from "./metrics";
 // ⚠️ 생태관광정보 서비스(GreenTourService) 지역기반 API는 사용하지 않는다 — 절대규칙 #5.
 
 const BASE = process.env.TOUR_API_BASE_URL ?? "https://apis.data.go.kr/B551011/KorService2";
-const KEY = process.env.TOUR_API_SERVICE_KEY ?? "";
 const AREA = process.env.TOUR_API_AREA_CODE ?? "7"; // 울산 고정
 
-const COMMON: Record<string, string> = {
+// data.go.kr는 Encoding/Decoding 두 형태의 키를 준다. URLSearchParams가 호출 시 한 번 인코딩하므로
+// 원본(Decoding)이 필요한데, 인코딩 키(%2B 등 포함)를 넣어도 동작하도록 디코딩해 정규화한다.
+// → 사용자는 둘 중 무엇을 넣어도 됨.
+function normalizeKey(raw: string): string {
+  if (!raw.includes("%")) return raw; // 디코딩 키(원본)
+  try {
+    return decodeURIComponent(raw); // 인코딩 키 → 원본으로 복원
+  } catch {
+    return raw;
+  }
+}
+const KEY = normalizeKey(process.env.TOUR_API_SERVICE_KEY ?? "");
+
+// KorService2는 엔드포인트별 허용 파라미터가 엄격하다. areaCode는 목록/검색에만 붙이고
+// detailCommon2 같은 단건 조회엔 붙이지 않는다(붙이면 INVALID_REQUEST_PARAMETER_ERROR).
+const BASE_COMMON: Record<string, string> = {
   MobileOS: "ETC",
   MobileApp: "WhaleYeojido",
   _type: "json",
-  areaCode: AREA,
 };
 
 const TIMEOUT_MS = 8000;
@@ -22,7 +35,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ApiPage = { items: RawTourItem[]; totalCount: number };
 
-async function callBody(endpoint: string, params: Record<string, string>): Promise<ApiPage> {
+async function callBody(endpoint: string, params: Record<string, string>, withArea = true): Promise<ApiPage> {
   if (!KEY) throw new Error("TOUR_API_SERVICE_KEY 미설정 — mock 모드로 동작해야 합니다.");
   if (!canCall()) {
     const q = quotaStatus();
@@ -30,7 +43,8 @@ async function callBody(endpoint: string, params: Record<string, string>): Promi
   }
 
   // 주의: data.go.kr 발급 키는 URL 인코딩된 형태일 수 있음. .env에는 '디코딩된' 키를 넣는다.
-  const qs = new URLSearchParams({ serviceKey: KEY, ...COMMON, ...params });
+  const common = withArea ? { ...BASE_COMMON, areaCode: AREA } : BASE_COMMON;
+  const qs = new URLSearchParams({ serviceKey: KEY, ...common, ...params });
   const url = `${BASE}/${endpoint}?${qs.toString()}`;
 
   let lastErr: unknown;
@@ -69,7 +83,13 @@ export function areaBasedListPage(contentTypeId: string, pageNo = 1, numOfRows =
   });
 }
 
-/** '고래/장생포/반구대' 키워드 매칭 → 테마 태깅 보강. */
+/** '고래/장생포/반구대' 키워드 매칭 → 테마 태깅·수집 보강 (areaCode=7). */
 export async function searchKeyword(keyword: string): Promise<RawTourItem[]> {
   return (await callBody("searchKeyword2", { keyword, pageNo: "1", numOfRows: "100" })).items;
+}
+
+/** contentId 단건 상세 (areaCode 미포함). 지역 목록에 안 잡히는 핵심 스팟(예: 반구대) 보장 수집·overview 보강. */
+export async function detailCommon(contentId: string): Promise<RawTourItem | null> {
+  const { items } = await callBody("detailCommon2", { contentId }, false);
+  return items[0] ?? null;
 }
