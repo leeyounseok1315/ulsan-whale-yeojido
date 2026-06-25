@@ -1,7 +1,7 @@
 import type { RawTourItem, WhaleSpot } from "./types";
 import { toWhaleSpot } from "./adapter";
 import { cached, setCache } from "./cache";
-import { collectAndNormalize, isMockMode } from "./collect";
+import { collectAndNormalize, collectFast, isMockMode } from "./collect";
 import { recordBatch } from "./metrics";
 
 // BFF 데이터 서비스 레이어 — 캐시 우선 조회 → 미스 시 수집 파이프라인 → 테마 태깅.
@@ -20,8 +20,16 @@ function buildSpots(items: RawTourItem[]): WhaleSpot[] {
     .sort((a, b) => Number(b.isCore) - Number(a.isCore) || b.relevance - a.relevance);
 }
 
+// 읽기 경로: 빠른 수집(순차) + in-flight 합치기 — 예열과 동시 요청이 수집을 중복 실행하지 않게 한다.
+let inflight: Promise<WhaleSpot[]> | null = null;
+async function produceFast(): Promise<WhaleSpot[]> {
+  return buildSpots((await collectFast()).items);
+}
 export async function getSpots(): Promise<WhaleSpot[]> {
-  return cached(CACHE_KEY, TTL_MS, async () => buildSpots((await collectAndNormalize()).items));
+  return cached(CACHE_KEY, TTL_MS, () => {
+    if (!inflight) inflight = produceFast().finally(() => (inflight = null));
+    return inflight;
+  });
 }
 
 export async function getSpot(id: string): Promise<WhaleSpot | null> {

@@ -30,3 +30,6 @@ export const CORE_BY_ID: Record<string, CoreSpot> = Object.fromEntries(
 
 // areaCode=7 지역 목록에 안 잡히는 스팟(예: 반구대)까지 보장 수집하기 위한 detailCommon2 대상 ID.
 export const CORE_FETCH_IDS = CORE_SPOTS.map((c) => c.id);
+
+// 연계 자연 자원 단건 조회 대상(태화강 국가정원·영남알프스) — 빠른 수집 경로에서 보장 포함.
+export const LINKED_FETCH_IDS = ["128202", "2674942"];

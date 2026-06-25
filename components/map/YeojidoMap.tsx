@@ -7,39 +7,88 @@ import { WhaleMarker } from "./WhaleMarker";
 
 type View = { x: number; y: number; k: number };
 type Pt = { s: WhaleSpot; x: number; y: number };
+type Cluster = { x: number; y: number; members: Pt[] };
 
 const K_MIN = 0.6;
 const K_MAX = 4.5;
-const PAN_STEP = 70; // 키보드 패닝 한 칸 (viewBox 단위)
+const PAN_STEP = 70; // 키보드 패닝 한 칸(viewBox 단위)
+const EXPAND_K = 2.6; // 이 줌 이상이면 군집을 묶음 핀 대신 부채꼴로 펼친다
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-// 겹치는 마커(예: 장생포 군집)를 중심 주위로 부채꼴 분산 — 데이터는 그대로 두고 표시만 분리.
-function spreadOverlaps(pts: Pt[]): Pt[] {
-  const R = 30;
-  const groups: { cx: number; cy: number; items: Pt[] }[] = [];
+// 근접 마커를 묶는다. 임계 거리는 줌이 커질수록 줄어 자연히 흩어진다.
+function clusterPoints(pts: Pt[], k: number): Cluster[] {
+  const R = 70 / k;
+  const clusters: Cluster[] = [];
   for (const p of pts) {
-    const g = groups.find((g) => Math.hypot(g.cx - p.x, g.cy - p.y) < R * 1.6);
-    if (g) {
-      g.items.push(p);
-      g.cx = g.items.reduce((a, b) => a + b.x, 0) / g.items.length;
-      g.cy = g.items.reduce((a, b) => a + b.y, 0) / g.items.length;
+    let best: Cluster | null = null;
+    let bestD = R;
+    for (const c of clusters) {
+      const d = Math.hypot(c.x - p.x, c.y - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    if (best) {
+      best.members.push(p);
+      best.x = best.members.reduce((a, b) => a + b.x, 0) / best.members.length;
+      best.y = best.members.reduce((a, b) => a + b.y, 0) / best.members.length;
     } else {
-      groups.push({ cx: p.x, cy: p.y, items: [p] });
+      clusters.push({ x: p.x, y: p.y, members: [p] });
     }
   }
-  const out: Pt[] = [];
-  for (const g of groups) {
-    if (g.items.length === 1) {
-      out.push(g.items[0]);
-      continue;
-    }
-    const n = g.items.length;
-    g.items.forEach((p, i) => {
-      const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
-      out.push({ s: p.s, x: g.cx + Math.cos(a) * R, y: g.cy + Math.sin(a) * R });
-    });
-  }
-  return out;
+  return clusters;
+}
+
+// 펼칠 때(동일 좌표 포함) 부채꼴로 분산 — 각 스팟이 개별 클릭 가능하도록.
+function fanOut(members: Pt[], cx: number, cy: number, r: number): Pt[] {
+  if (members.length === 1) return [{ ...members[0], x: cx, y: cy }];
+  return members.map((m, i) => {
+    const a = -Math.PI / 2 + (i / members.length) * Math.PI * 2;
+    return { s: m.s, x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  });
+}
+
+function ClusterPin({
+  x,
+  y,
+  k,
+  count,
+  onExpand,
+}: {
+  x: number;
+  y: number;
+  k: number;
+  count: number;
+  onExpand: () => void;
+}) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${1 / k})`}>
+      <g
+        role="button"
+        tabIndex={0}
+        aria-label={`이 일대 ${count}곳 — 펼쳐 보기`}
+        className="cursor-pointer outline-none"
+        onClick={(e) => {
+          e.stopPropagation();
+          onExpand();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onExpand();
+          }
+        }}
+      >
+        <ellipse cx={0} cy={23} rx={16} ry={3} fill="var(--color-ink)" opacity={0.18} />
+        <circle r={25} fill="none" stroke="var(--color-seal)" strokeWidth={1.5} opacity={0.45} />
+        <circle r={20} fill="var(--color-seal)" stroke="var(--color-paper-light)" strokeWidth={2} opacity={0.96} />
+        <text y={6} textAnchor="middle" fontSize={17} fontWeight="bold" fontFamily="var(--font-body)" fill="var(--color-paper-light)">
+          {count}
+        </text>
+      </g>
+    </g>
+  );
 }
 
 export function YeojidoMap({
@@ -54,12 +103,10 @@ export function YeojidoMap({
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ px: number; py: number } | null>(null);
-  const moved = useRef(false); // 패닝 여부 — 클릭(빈 곳 선택해제)에서 읽어 패닝 후 닫힘을 막는다.
+  const moved = useRef(false);
 
-  const points = useMemo(
-    () => spreadOverlaps(spots.map((s) => ({ s, ...projectToMap(s.lon, s.lat) }))),
-    [spots],
-  );
+  const points = useMemo<Pt[]>(() => spots.map((s) => ({ s, ...projectToMap(s.lon, s.lat) })), [spots]);
+  const clusters = useMemo(() => clusterPoints(points, view.k), [points, view.k]);
 
   const scaleOf = (r: DOMRect) => Math.min(r.width / MAP_W, r.height / MAP_H);
   const toVb = (cx: number, cy: number, r: DOMRect) => {
@@ -77,7 +124,13 @@ export function YeojidoMap({
       return { k: k2, x: p.x - k2 * mx, y: p.y - k2 * my };
     });
 
-  // 휠 줌 — React onWheel은 passive로 등록돼 preventDefault가 무효라 네이티브 비패시브로 붙인다.
+  // 군집을 화면 중앙으로 당기며 확대 → 펼쳐진다.
+  const expandCluster = (c: Cluster) =>
+    setView((v) => {
+      const k2 = clamp(Math.max(EXPAND_K, v.k * 2.2), K_MIN, K_MAX);
+      return { k: k2, x: MAP_W / 2 - k2 * c.x, y: MAP_H / 2 - k2 * c.y };
+    });
+
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -110,14 +163,15 @@ export function YeojidoMap({
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    const center = { x: MAP_W / 2, y: MAP_H / 2 };
     const keys: Record<string, () => void> = {
       ArrowUp: () => setView((v) => ({ ...v, y: v.y + PAN_STEP })),
       ArrowDown: () => setView((v) => ({ ...v, y: v.y - PAN_STEP })),
       ArrowLeft: () => setView((v) => ({ ...v, x: v.x + PAN_STEP })),
       ArrowRight: () => setView((v) => ({ ...v, x: v.x - PAN_STEP })),
-      "+": () => zoomAt({ x: MAP_W / 2, y: MAP_H / 2 }, 1.2),
-      "=": () => zoomAt({ x: MAP_W / 2, y: MAP_H / 2 }, 1.2),
-      "-": () => zoomAt({ x: MAP_W / 2, y: MAP_H / 2 }, 1 / 1.2),
+      "+": () => zoomAt(center, 1.2),
+      "=": () => zoomAt(center, 1.2),
+      "-": () => zoomAt(center, 1 / 1.2),
       "0": () => setView({ x: 0, y: 0, k: 1 }),
     };
     const fn = keys[e.key];
@@ -127,7 +181,17 @@ export function YeojidoMap({
     }
   };
 
-  const center = () => ({ x: MAP_W / 2, y: MAP_H / 2 });
+  const renderMarker = (p: Pt) => (
+    <WhaleMarker
+      key={p.s.id}
+      x={p.x}
+      y={p.y}
+      k={view.k}
+      spot={p.s}
+      selected={p.s.id === selectedId}
+      onSelect={() => onSelect(p.s)}
+    />
+  );
 
   return (
     <div
@@ -156,24 +220,20 @@ export function YeojidoMap({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <UlsanBaseMap />
-          {points.map((p) => (
-            <WhaleMarker
-              key={p.s.id}
-              x={p.x}
-              y={p.y}
-              k={view.k}
-              spot={p.s}
-              selected={p.s.id === selectedId}
-              onSelect={() => onSelect(p.s)}
-            />
-          ))}
+          {clusters.map((c, i) => {
+            if (c.members.length === 1) return renderMarker(c.members[0]);
+            if (view.k < EXPAND_K) {
+              return <ClusterPin key={`cl-${i}`} x={c.x} y={c.y} k={view.k} count={c.members.length} onExpand={() => expandCluster(c)} />;
+            }
+            return fanOut(c.members, c.x, c.y, 95 / view.k).map(renderMarker);
+          })}
         </g>
       </svg>
 
       <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
         {[
-          { t: "+", f: () => zoomAt(center(), 1.25), l: "확대" },
-          { t: "−", f: () => zoomAt(center(), 1 / 1.25), l: "축소" },
+          { t: "+", f: () => zoomAt({ x: MAP_W / 2, y: MAP_H / 2 }, 1.25), l: "확대" },
+          { t: "−", f: () => zoomAt({ x: MAP_W / 2, y: MAP_H / 2 }, 1 / 1.25), l: "축소" },
           { t: "⟲", f: () => setView({ x: 0, y: 0, k: 1 }), l: "처음 위치로" },
         ].map((b) => (
           <button
