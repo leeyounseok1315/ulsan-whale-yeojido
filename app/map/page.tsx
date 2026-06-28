@@ -8,6 +8,7 @@ import { MapLegend } from "@/components/map/MapLegend";
 import { SpotDetailPanel } from "@/components/map/SpotDetailPanel";
 import { PetroglyphWhale } from "@/components/ui/PetroglyphWhale";
 import { SourceLabel } from "@/components/ui/SourceLabel";
+import { ToggleButton } from "@/components/ui/ToggleButton";
 import { THEME_ORDER, WHALE_THEMES, themeColor } from "@/lib/theme";
 import type { WhaleSpot, WhaleThemeId } from "@/lib/types";
 
@@ -51,15 +52,19 @@ export default function MapPage() {
         aria-label="고래 테마 필터"
         className="absolute inset-x-0 top-14 z-20 flex gap-2 overflow-x-auto px-4 py-1 md:hidden"
       >
-        <Chip on={active === null} onClick={() => setActive(null)} label={`전체 ${spots.length}`} />
+        <ToggleButton active={active === null} tone="ink" onClick={() => setActive(null)}>
+          전체 {spots.length}
+        </ToggleButton>
         {THEME_ORDER.map((t) => (
-          <Chip
+          <ToggleButton
             key={t}
-            on={active === t}
+            active={active === t}
+            tone="ink"
             color={themeColor(t)}
             onClick={() => setActive(active === t ? null : t)}
-            label={WHALE_THEMES[t].label}
-          />
+          >
+            {WHALE_THEMES[t].label}
+          </ToggleButton>
         ))}
       </div>
 
@@ -85,21 +90,6 @@ export default function MapPage() {
         <SourceLabel />
       </div>
     </main>
-  );
-}
-
-function Chip({ on, onClick, label, color }: { on: boolean; onClick: () => void; label: string; color?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={on}
-      className={`flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-        on ? "border-ink bg-ink text-paper-light" : "border-ink/25 bg-paper-light/85 text-ink"
-      }`}
-    >
-      {color && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />}
-      {label}
-    </button>
   );
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { Panel } from "@/components/ui/Panel";
 import { THEME_ORDER, WHALE_THEMES, themeColor } from "@/lib/theme";
 import type { WhaleSpot, WhaleThemeId } from "@/lib/types";
 
@@ -16,9 +17,10 @@ export function MapLegend({
   const count = (t: WhaleThemeId) => spots.filter((s) => s.theme === t).length;
 
   return (
-    <div className="w-[208px] rounded-[3px] border border-ink/25 bg-paper-light/92 p-3 shadow-md backdrop-blur-sm">
-      <div className="mb-2 flex items-baseline justify-between border-b border-ink/15 pb-1.5">
-        <span className="font-display text-sm font-bold text-ink">범례 · 고래 테마</span>
+    <Panel
+      className="w-[208px]"
+      title="범례 · 고래 테마"
+      action={
         <button
           onClick={() => onToggle(null)}
           aria-pressed={active === null}
@@ -26,7 +28,8 @@ export function MapLegend({
         >
           전체 {spots.length}
         </button>
-      </div>
+      }
+    >
       <ul className="space-y-0.5">
         {THEME_ORDER.map((t) => {
           const th = WHALE_THEMES[t];
@@ -55,6 +58,6 @@ export function MapLegend({
       <p className="mt-2 border-t border-ink/15 pt-1.5 text-[10.5px] leading-snug text-ink-faint">
         구·군이 아닌 고래의 길로 묶었어요.
       </p>
-    </div>
+    </Panel>
   );
 }

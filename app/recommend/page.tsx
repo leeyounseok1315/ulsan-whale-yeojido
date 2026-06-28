@@ -3,8 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { SeasonBadge } from "@/components/ui/SeasonBadge";
 import { SourceLabel } from "@/components/ui/SourceLabel";
+import { ToggleButton } from "@/components/ui/ToggleButton";
 import { themeColor, WHALE_THEMES } from "@/lib/theme";
 import { isSeasonOpen } from "@/lib/season";
 import {
@@ -65,7 +67,9 @@ export default function RecommendPage() {
           <legend className="mb-2 text-sm font-semibold text-ink-soft">동행 유형</legend>
           <div role="radiogroup" aria-label="동행 유형" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {COMPANIONS.map((c) => (
-              <Choice key={c} on={companion === c} onClick={() => setCompanion(c)} label={COMPANION_LABEL[c]} />
+              <ToggleButton key={c} shape="block" role="radio" active={companion === c} onClick={() => setCompanion(c)}>
+                {COMPANION_LABEL[c]}
+              </ToggleButton>
             ))}
           </div>
         </fieldset>
@@ -75,7 +79,9 @@ export default function RecommendPage() {
           <legend className="mb-2 text-sm font-semibold text-ink-soft">체류 기간</legend>
           <div role="radiogroup" aria-label="체류 기간" className="grid grid-cols-3 gap-2">
             {DURATIONS.map((d) => (
-              <Choice key={d} on={duration === d} onClick={() => setDuration(d)} label={DURATION_LABEL[d]} />
+              <ToggleButton key={d} shape="block" role="radio" active={duration === d} onClick={() => setDuration(d)}>
+                {DURATION_LABEL[d]}
+              </ToggleButton>
             ))}
           </div>
         </fieldset>
@@ -129,7 +135,7 @@ export default function RecommendPage() {
                           className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-paper-light"
                           style={{ backgroundColor: themeColor(stop.spot.theme) }}
                         />
-                        <div className="rounded-[4px] border border-ink/15 bg-paper-light/70 p-4">
+                        <Card className="p-4">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-sm font-semibold text-ink-soft">{stop.arrive}</span>
                             <span className="text-[11px] text-ink-faint">{WHALE_THEMES[stop.spot.theme].label}</span>
@@ -144,7 +150,7 @@ export default function RecommendPage() {
                             </div>
                           )}
                           <p className="mt-1.5 text-sm leading-snug text-ink-soft">{stop.note}</p>
-                        </div>
+                        </Card>
                       </li>
                     ))}
                 </ol>
@@ -161,20 +167,3 @@ export default function RecommendPage() {
   );
 }
 
-function Choice({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      role="radio"
-      aria-checked={on}
-      onClick={onClick}
-      className={`rounded-[3px] border px-3 py-3 text-sm font-semibold transition-colors ${
-        on
-          ? "border-seal bg-seal text-paper-light"
-          : "border-ink/25 bg-paper-light/60 text-ink hover:border-ink/50"
-      }`}
-    >
-      {on && <span aria-hidden>✓ </span>}
-      {label}
-    </button>
-  );
-}

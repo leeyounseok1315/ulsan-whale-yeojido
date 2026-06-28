@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { WHALE_THEMES, themeColor } from "@/lib/theme";
 import { isSeasonOpen } from "@/lib/season";
+import { Badge } from "@/components/ui/Badge";
 import { PetroglyphWhale } from "@/components/ui/PetroglyphWhale";
 import { SeasonBadge } from "@/components/ui/SeasonBadge";
 import { SourceLabel } from "@/components/ui/SourceLabel";
@@ -73,11 +74,7 @@ export function SpotDetailPanel({
 
       <div className="px-5 pb-6 pt-4">
         <div className="mb-1 flex items-center gap-2">
-          {spot.isCore && (
-            <span className="rounded-[2px] border border-seal/50 bg-seal/10 px-1.5 py-0.5 text-[10px] font-bold text-seal">
-              핵심 고래 스팟
-            </span>
-          )}
+          {spot.isCore && <Badge tone="core">핵심 고래 스팟</Badge>}
           <span className="text-[11px] text-ink-faint">{spot.contentTypeLabel}</span>
         </div>
 
