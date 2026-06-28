@@ -27,6 +27,14 @@ async function redisCmd(cmd: (string | number)[]): Promise<unknown> {
   return (await res.json()).result;
 }
 
+/** 다른 모듈(메트릭 등)이 같은 Upstash 연결을 재사용하도록 노출. */
+export function redisAvailable(): boolean {
+  return useRedis;
+}
+export async function redisCommand(cmd: (string | number)[]): Promise<unknown> {
+  return redisCmd(cmd);
+}
+
 async function backendGet<T>(key: string): Promise<T | undefined> {
   if (useRedis) {
     const r = await redisCmd(["GET", key]);

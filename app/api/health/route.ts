@@ -9,7 +9,7 @@ export async function GET() {
     ok: true,
     mode: isMockMode() ? "mock" : "live",
     cache: cacheStats(),
-    metrics: getMetrics(),
+    metrics: await getMetrics(),
     source: "공공데이터",
     ts: new Date().toISOString(),
   });
