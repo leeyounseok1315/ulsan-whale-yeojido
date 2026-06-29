@@ -12,11 +12,24 @@ const TTL_MS = 1000 * 60 * 60; // 1시간
 
 // detailIntro2는 콘텐츠타입마다 필드명이 다르다(실측 기반 후보군).
 const INTRO_FIELDS = {
-  useTime: ["usetime", "usetimeculture", "usetimeleports", "opentimefood", "opentime", "usetimefestival", "checkintime"],
+  // 주의: 축제(15)의 usetimefestival은 '운영시간'이 아니라 '이용요금'이라 useFee로 분류. 축제 시간은 행사기간으로.
+  useTime: ["usetime", "usetimeculture", "usetimeleports", "opentimefood", "opentime", "playtime", "checkintime"],
   restDate: ["restdate", "restdateculture", "restdateleports", "restdatefood", "restdateshopping"],
-  useFee: ["usefee", "usefeeleports"],
+  useFee: ["usefee", "usefeeleports", "usetimefestival"],
   tel: ["infocenter", "infocenterculture", "infocenterfood", "infocenterleports", "infocenterlodging", "infocentershopping"],
 };
+
+// 축제 행사기간(eventstartdate~eventenddate, YYYYMMDD) → 운영시간 대체 표시.
+function festivalPeriod(intro: Record<string, unknown> | null): string | undefined {
+  if (!intro) return undefined;
+  const fmt = (s: unknown) => {
+    const v = String(s ?? "");
+    return /^\d{8}$/.test(v) ? `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}` : "";
+  };
+  const sd = fmt(intro.eventstartdate);
+  const ed = fmt(intro.eventenddate);
+  return sd ? `행사기간 ${sd}${ed ? ` ~ ${ed}` : ""}` : undefined;
+}
 
 // HTML 제거 + 공사 표기 sanitize.
 function clean(s?: string | null): string | undefined {
@@ -66,7 +79,7 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
       image: firstImg,
       images,
       detail: {
-        useTime: pick(intro, INTRO_FIELDS.useTime),
+        useTime: pick(intro, INTRO_FIELDS.useTime) ?? festivalPeriod(intro),
         restDate: pick(intro, INTRO_FIELDS.restDate),
         useFee: pick(intro, INTRO_FIELDS.useFee),
       },
