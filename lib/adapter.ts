@@ -20,6 +20,9 @@ const PLACE_KEYWORDS: [string, number][] = [["장생포", 0.9]];
 // 숙박(32)·쇼핑(38)·음식점(39)은 '장생포' 지명만으론 고래 스팟이 아니다 — 강한 토큰 필요.
 const PLACE_OK_TYPES = new Set(["12", "14", "15", "25", "28"]);
 
+// is_whale_themed ⟺ 핵심이거나 연관도가 임계 이상. (PLAN.md: is_whale_themed/relevance 동기화 규칙)
+export const WHALE_RELEVANCE_THRESHOLD = 0.3;
+
 function relevanceOf(text: string, contentTypeId: string): number {
   let score = 0;
   for (const [kw, w] of STRONG_KEYWORDS) if (text.includes(kw)) score = Math.max(score, w);
@@ -60,6 +63,7 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
     tel: raw.tel ? sanitize(raw.tel) : null,
     summary: sanitize(raw.overview ?? ""),
     isCore: Boolean(core),
+    isWhaleThemed: Boolean(core) || relevance >= WHALE_RELEVANCE_THRESHOLD,
     relevance,
     seasonal: core?.seasonal ? CRUISE_SEASON : undefined,
     // 절대규칙 #1: 사용자에게 노출되는 detail 필드도 파싱 경계에서 sanitize.

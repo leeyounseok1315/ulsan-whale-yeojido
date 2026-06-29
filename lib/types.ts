@@ -57,9 +57,11 @@ export interface WhaleSpot {
   tel: string | null;
   summary: string; // overview (공사 표기 sanitize 적용)
   isCore: boolean; // 핵심 5대 고래 스팟 화이트리스트
+  isWhaleThemed: boolean; // 고래 테마 여부 (= isCore || relevance>=임계) — 태깅 엔진 출력
   relevance: number; // 0~1 고래 연관도
   seasonal?: SeasonRule; // 시즌성(고래바다여행선 등)
   detail?: SpotDetail;
+  images?: string[]; // 상세 갤러리(detailImage2) — 상세 조회 시에만 채움
 }
 
 export interface SpotDetail {

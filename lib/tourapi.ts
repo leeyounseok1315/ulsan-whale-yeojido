@@ -93,3 +93,18 @@ export async function detailCommon(contentId: string): Promise<RawTourItem | nul
   const { items } = await callBody("detailCommon2", { contentId }, false);
   return items[0] ?? null;
 }
+
+// detailIntro2: 콘텐츠타입별 운영시간·휴무·요금 등(필드명이 타입마다 다름 — 호출부에서 매핑).
+export async function detailIntro(contentId: string, contentTypeId: string): Promise<Record<string, unknown> | null> {
+  const { items } = await callBody("detailIntro2", { contentId, contentTypeId }, false);
+  return (items[0] as unknown as Record<string, unknown>) ?? null;
+}
+
+// detailImage2: 추가 이미지 갤러리(originimgurl). http→https 보정.
+export async function detailImages(contentId: string): Promise<string[]> {
+  const { items } = await callBody("detailImage2", { contentId, imageYN: "Y", numOfRows: "10" }, false);
+  return (items as unknown as Array<{ originimgurl?: string }>)
+    .map((it) => it.originimgurl)
+    .filter((u): u is string => Boolean(u))
+    .map((u) => u.replace(/^http:\/\//i, "https://"));
+}

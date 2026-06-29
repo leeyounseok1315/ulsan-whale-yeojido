@@ -1,0 +1,75 @@
+import type { WhaleSpot } from "./types";
+import { getSpot } from "./data";
+import { detailCommon, detailImages, detailIntro } from "./tourapi";
+import { cached } from "./cache";
+import { sanitize } from "./sanitize";
+import { isMockMode } from "./collect";
+
+// detail* 통합 상세 조회 — base 스팟 + detailIntro2(운영시간·휴무·요금) + detailImage2(갤러리)
+// + 필요 시 detailCommon2(overview). 스팟별 캐싱. (PLAN.md W3: detailCommon2/Intro2/Image2 통합)
+
+const TTL_MS = 1000 * 60 * 60; // 1시간
+
+// detailIntro2는 콘텐츠타입마다 필드명이 다르다(실측 기반 후보군).
+const INTRO_FIELDS = {
+  useTime: ["usetime", "usetimeculture", "usetimeleports", "opentimefood", "opentime", "usetimefestival", "checkintime"],
+  restDate: ["restdate", "restdateculture", "restdateleports", "restdatefood", "restdateshopping"],
+  useFee: ["usefee", "usefeeleports"],
+  tel: ["infocenter", "infocenterculture", "infocenterfood", "infocenterleports", "infocenterlodging", "infocentershopping"],
+};
+
+// HTML 제거 + 공사 표기 sanitize.
+function clean(s?: string | null): string | undefined {
+  if (!s) return undefined;
+  const t = String(s)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  return sanitize(t) || undefined;
+}
+
+function pick(item: Record<string, unknown> | null, fields: string[]): string | undefined {
+  if (!item) return undefined;
+  for (const f of fields) {
+    const v = item[f];
+    if (v && String(v).trim()) return clean(String(v));
+  }
+  return undefined;
+}
+
+/** 상세 패널용 — base 스팟에 운영시간·요금·갤러리를 보강한 모델. 스팟별 캐싱. */
+export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
+  const base = await getSpot(id);
+  if (!base) return null;
+  if (isMockMode()) return base; // mock 픽스처는 이미 detail 포함
+
+  return cached(`detail:${id}:v1`, TTL_MS, async () => {
+    const [intro, images, common] = await Promise.all([
+      detailIntro(id, base.contentTypeId).catch(() => null),
+      detailImages(id).catch(() => [] as string[]),
+      base.summary ? Promise.resolve(null) : detailCommon(id).catch(() => null), // overview 없을 때만
+    ]);
+
+    const overview = base.summary || clean(common?.overview) || "";
+    const firstImg =
+      base.image ||
+      (common?.firstimage ? common.firstimage.replace(/^http:\/\//i, "https://") : null) ||
+      images[0] ||
+      null;
+
+    return {
+      ...base,
+      summary: overview,
+      tel: base.tel || pick(intro, INTRO_FIELDS.tel) || (common?.tel ? sanitize(common.tel) : null) || null,
+      image: firstImg,
+      images,
+      detail: {
+        useTime: pick(intro, INTRO_FIELDS.useTime),
+        restDate: pick(intro, INTRO_FIELDS.restDate),
+        useFee: pick(intro, INTRO_FIELDS.useFee),
+      },
+    };
+  });
+}

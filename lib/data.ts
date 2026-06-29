@@ -16,7 +16,7 @@ function buildSpots(items: RawTourItem[]): WhaleSpot[] {
     .map(toWhaleSpot)
     // 여행코스(25)는 지점이 아닌 일정 글귀(주소 결측)라 지도 핀에서 제외 — 추천 엔진이 별도로 코스 생성.
     .filter((s) => s.contentTypeId !== "25")
-    .filter((s) => s.isCore || s.relevance >= 0.3)
+    .filter((s) => s.isWhaleThemed)
     .sort((a, b) => Number(b.isCore) - Number(a.isCore) || b.relevance - a.relevance);
 }
 

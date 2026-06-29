@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSpot } from "@/lib/data";
+import { getSpotDetail } from "@/lib/detail";
 
-// GET /api/spots/:id — 스팟 상세 (detail* 통합 자리). Next 15: params는 Promise.
+// GET /api/spots/:id — detail* 통합 상세(운영시간·휴무·요금·갤러리). Next 15: params는 Promise.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const spot = await getSpot(id);
+  const spot = await getSpotDetail(id);
   if (!spot) {
     return NextResponse.json({ error: "스팟을 찾을 수 없어요." }, { status: 404 });
   }
