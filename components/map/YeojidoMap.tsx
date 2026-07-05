@@ -146,7 +146,8 @@ export function YeojidoMap({
   const onPointerDown = (e: React.PointerEvent) => {
     drag.current = { px: e.clientX, py: e.clientY };
     moved.current = false;
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    // setPointerCapture는 SVG 자식(마커·클러스터)의 click 타깃을 컨테이너로 가로채
+    // 실제 마우스 클릭이 안 먹는다 → 캡처하지 않는다. 지도가 풀스크린이라 드래그엔 지장 없음.
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current) return;
