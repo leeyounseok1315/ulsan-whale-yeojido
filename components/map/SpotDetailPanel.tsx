@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { WHALE_THEMES, themeColor } from "@/lib/theme";
 import { isSeasonOpen } from "@/lib/season";
 import { Badge } from "@/components/ui/Badge";
@@ -9,17 +10,25 @@ import { SeasonBadge } from "@/components/ui/SeasonBadge";
 import { SourceLabel } from "@/components/ui/SourceLabel";
 import type { WhaleSpot } from "@/lib/types";
 
+const proxied = (src: string) => `/api/img?u=${encodeURIComponent(src)}`;
+
+async function fetchDetail(id: string): Promise<WhaleSpot> {
+  const res = await fetch(`/api/spots/${id}`);
+  if (!res.ok) throw new Error("detail");
+  return (await res.json()).spot as WhaleSpot;
+}
+
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
     <div className="flex gap-3 border-t border-ink/10 py-2 text-sm">
       <dt className="w-16 shrink-0 font-semibold text-ink-soft">{label}</dt>
-      <dd className="text-ink">{value}</dd>
+      <dd className="whitespace-pre-line text-ink">{value}</dd>
     </div>
   );
 }
 
-// 마커 클릭 시 열리는 상세 — 데스크톱은 우측 첩(帖), 모바일은 하단 시트.
+// 마커 클릭 시 열리는 상세 — base 스팟으로 즉시 렌더 후 /api/spots/[id]의 detail* 통합으로 보강.
 export function SpotDetailPanel({
   spot,
   refDate,
@@ -34,7 +43,26 @@ export function SpotDetailPanel({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  // 접근성: 열릴 때 닫기 버튼으로 포커스, Esc로 닫기, 닫힐 때 직전 포커스(마커)로 복원.
+  const { data: detail, isLoading } = useQuery({
+    queryKey: ["spotDetail", spot.id],
+    queryFn: () => fetchDetail(spot.id),
+    staleTime: 5 * 60_000,
+  });
+
+  const d = detail ?? spot; // 즉시 base → 도착 시 운영시간·요금·갤러리 보강
+  const images = d.images ?? [];
+  const [mainImg, setMainImg] = useState<string | null>(null);
+  const [imgFailed, setImgFailed] = useState(false);
+  const heroImg = mainImg ?? d.image ?? images[0] ?? null;
+  const showImage = Boolean(heroImg) && !imgFailed;
+
+  // 스팟 변경 시 이미지 상태 초기화
+  useEffect(() => {
+    setMainImg(null);
+    setImgFailed(false);
+  }, [spot.id]);
+
+  // 접근성: 열릴 때 닫기 버튼 포커스, Esc로 닫기, 닫힐 때 직전 포커스로 복원.
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
@@ -53,11 +81,23 @@ export function SpotDetailPanel({
       role="dialog"
       aria-modal="false"
       aria-label={`${spot.title} 상세 정보`}
-      className="wy-fade-up fixed inset-x-0 bottom-0 z-30 max-h-[78dvh] overflow-y-auto rounded-t-xl border-t border-ink/25 bg-paper-light shadow-2xl md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[420px] md:rounded-none md:border-l md:border-t-0"
+      className="wy-fade-up fixed inset-x-0 bottom-0 z-30 max-h-[82dvh] overflow-y-auto rounded-t-xl border-t border-ink/25 bg-paper-light shadow-2xl md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[420px] md:rounded-none md:border-l md:border-t-0"
     >
-      {/* 헤더 이미지 자리 (firstimage 미수신 → 암각화 고래 플레이스홀더) */}
-      <div className="relative flex h-40 items-center justify-center overflow-hidden" style={{ backgroundColor: themeColor(spot.theme) }}>
-        <PetroglyphWhale className="h-24 w-auto opacity-25" stroke="var(--color-paper-light)" strokeWidth={3} />
+      {/* 헤더: 실제 사진(서버 프록시) 또는 암각화 플레이스홀더 */}
+      <div className="relative flex h-44 items-center justify-center overflow-hidden" style={{ backgroundColor: themeColor(spot.theme) }}>
+        {showImage ? (
+          <img
+            src={proxied(heroImg as string)}
+            alt={spot.title}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <PetroglyphWhale className="h-24 w-auto opacity-25" stroke="var(--color-paper-light)" strokeWidth={3} />
+        )}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent" />
         <button
           ref={closeRef}
           onClick={onClose}
@@ -71,6 +111,25 @@ export function SpotDetailPanel({
           {theme.label}
         </span>
       </div>
+
+      {/* 갤러리 썸네일 (2장 이상일 때) */}
+      {images.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto border-b border-ink/10 bg-paper-light/60 p-2">
+          {images.slice(0, 8).map((im) => (
+            <button
+              key={im}
+              onClick={() => {
+                setMainImg(im);
+                setImgFailed(false);
+              }}
+              aria-label="사진 크게 보기"
+              className={`h-12 w-16 shrink-0 overflow-hidden rounded-[3px] border ${heroImg === im ? "border-seal" : "border-ink/20"}`}
+            >
+              <img src={proxied(im)} alt="" className="h-full w-full object-cover" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="px-5 pb-6 pt-4">
         <div className="mb-1 flex items-center gap-2">
@@ -90,14 +149,15 @@ export function SpotDetailPanel({
           </div>
         )}
 
-        {spot.summary && <p className="mt-4 text-sm leading-relaxed text-ink-soft">{spot.summary}</p>}
+        {d.summary && <p className="mt-4 text-sm leading-relaxed text-ink-soft">{d.summary}</p>}
 
         <dl className="mt-4">
-          <InfoRow label="운영시간" value={spot.detail?.useTime} />
-          <InfoRow label="휴무" value={spot.detail?.restDate} />
-          <InfoRow label="요금" value={spot.detail?.useFee} />
-          <InfoRow label="전화" value={spot.tel} />
+          <InfoRow label="운영시간" value={d.detail?.useTime} />
+          <InfoRow label="휴무" value={d.detail?.restDate} />
+          <InfoRow label="요금" value={d.detail?.useFee} />
+          <InfoRow label="전화" value={d.tel} />
         </dl>
+        {isLoading && <p className="mt-2 text-[12px] text-ink-faint">상세 정보 불러오는 중…</p>}
 
         <div className="mt-5 border-t border-ink/10 pt-3">
           <SourceLabel />
