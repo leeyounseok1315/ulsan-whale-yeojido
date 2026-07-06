@@ -54,14 +54,16 @@ export function SpotDetailPanel({
   const hasInfo = Boolean(d.summary || d.detail?.useTime || d.detail?.restDate || d.detail?.useFee || d.tel);
   const images = d.images ?? [];
   const [mainImg, setMainImg] = useState<string | null>(null);
-  const [imgFailed, setImgFailed] = useState(false);
+  // 실패한 이미지를 src 단위로 추적 — 빠른 스팟 전환 시 이전 이미지의 중단 오류가
+  // 새 스팟을 폴백으로 만들지 않도록(경합 방지).
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const heroImg = mainImg ?? d.image ?? images[0] ?? null;
-  const showImage = Boolean(heroImg) && !imgFailed;
+  const showImage = Boolean(heroImg) && failedSrc !== heroImg;
 
   // 스팟 변경 시 이미지 상태 초기화
   useEffect(() => {
     setMainImg(null);
-    setImgFailed(false);
+    setFailedSrc(null);
   }, [spot.id]);
 
   // 접근성: 열릴 때 닫기 버튼 포커스, Esc로 닫기, 닫힐 때 직전 포커스로 복원.
@@ -89,12 +91,12 @@ export function SpotDetailPanel({
       <div className="relative flex h-44 items-center justify-center overflow-hidden" style={{ backgroundColor: themeColor(spot.theme) }}>
         {showImage ? (
           <img
+            key={heroImg}
             src={proxied(heroImg as string)}
             alt={spot.title}
             className="h-full w-full object-cover"
-            loading="lazy"
             decoding="async"
-            onError={() => setImgFailed(true)}
+            onError={() => setFailedSrc(heroImg)}
           />
         ) : (
           <PetroglyphWhale className="h-24 w-auto opacity-25" stroke="var(--color-paper-light)" strokeWidth={3} />
@@ -120,10 +122,7 @@ export function SpotDetailPanel({
           {images.slice(0, 8).map((im) => (
             <button
               key={im}
-              onClick={() => {
-                setMainImg(im);
-                setImgFailed(false);
-              }}
+              onClick={() => setMainImg(im)}
               aria-label="사진 크게 보기"
               className={`h-12 w-16 shrink-0 overflow-hidden rounded-[3px] border ${heroImg === im ? "border-seal" : "border-ink/20"}`}
             >
