@@ -52,6 +52,12 @@ function pick(item: Record<string, unknown> | null, fields: string[]): string | 
   return undefined;
 }
 
+// 자체 이미지가 없는 스팟 → 대표(소속) 스팟의 실사진으로 보강.
+// 예: 장생포고래문화특구는 고래박물관을 포함하는 '특구(지역)'라 박물관 사진을 대표로 사용.
+const REPRESENTATIVE_IMAGE: Record<string, string> = {
+  "3495467": "130649", // 장생포고래문화특구 → 장생포 고래박물관
+};
+
 /** 상세 패널용 — base 스팟에 운영시간·요금·갤러리를 보강한 모델. 스팟별 캐싱. */
 export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
   const base = await getSpot(id);
@@ -66,18 +72,33 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
     ]);
 
     const overview = base.summary || clean(common?.overview) || "";
-    const firstImg =
+    let gallery = images;
+    let firstImg =
       base.image ||
       (common?.firstimage ? common.firstimage.replace(/^http:\/\//i, "https://") : null) ||
       images[0] ||
       null;
+
+    // 자체 이미지가 없으면 대표(소속) 스팟의 실사진으로 보강
+    if (!firstImg && gallery.length === 0 && REPRESENTATIVE_IMAGE[id]) {
+      const rep = REPRESENTATIVE_IMAGE[id];
+      const [repImgs, repCommon] = await Promise.all([
+        detailImages(rep).catch(() => [] as string[]),
+        detailCommon(rep).catch(() => null),
+      ]);
+      gallery = repImgs;
+      firstImg =
+        (repCommon?.firstimage ? repCommon.firstimage.replace(/^http:\/\//i, "https://") : null) ||
+        repImgs[0] ||
+        null;
+    }
 
     return {
       ...base,
       summary: overview,
       tel: base.tel || pick(intro, INTRO_FIELDS.tel) || (common?.tel ? sanitize(common.tel) : null) || null,
       image: firstImg,
-      images,
+      images: gallery,
       detail: {
         useTime: pick(intro, INTRO_FIELDS.useTime) ?? festivalPeriod(intro),
         restDate: pick(intro, INTRO_FIELDS.restDate),
