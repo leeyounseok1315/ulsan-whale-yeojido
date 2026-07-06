@@ -5,8 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { WHALE_THEMES, themeColor } from "@/backend/lib/theme";
 import { isSeasonOpen } from "@/backend/lib/season";
 import { Badge } from "@/frontend/components/ui/Badge";
-import { PetroglyphWhale } from "@/frontend/components/ui/PetroglyphWhale";
 import { SeasonBadge } from "@/frontend/components/ui/SeasonBadge";
+import { SpotArtwork } from "@/frontend/components/ui/SpotArtwork";
 import { SourceLabel } from "@/frontend/components/ui/SourceLabel";
 import type { WhaleSpot } from "@/backend/lib/types";
 
@@ -99,7 +99,7 @@ export function SpotDetailPanel({
             onError={() => setFailedSrc(heroImg)}
           />
         ) : (
-          <PetroglyphWhale className="h-24 w-auto opacity-25" stroke="var(--color-paper-light)" strokeWidth={3} />
+          <SpotArtwork spot={spot} className="h-28 w-auto opacity-45" />
         )}
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent" />
         <button
