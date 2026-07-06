@@ -78,9 +78,9 @@ export function WhaleMarker({
             height={20}
             rx={3}
             fill="var(--color-paper-light)"
-            stroke="var(--color-ink)"
-            strokeOpacity={0.18}
-            opacity={0.92}
+            stroke={spot.isCore ? "var(--color-seal)" : "var(--color-ink)"}
+            strokeOpacity={spot.isCore ? 0.5 : 0.18}
+            opacity={0.94}
           />
           <text
             x={0}
@@ -88,6 +88,7 @@ export function WhaleMarker({
             textAnchor="middle"
             fontSize={13}
             fontFamily="var(--font-display)"
+            fontWeight={spot.isCore ? "bold" : "normal"}
             fill="var(--color-ink)"
           >
             {spot.title}

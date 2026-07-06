@@ -43,13 +43,15 @@ export function SpotDetailPanel({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  const { data: detail, isLoading } = useQuery({
+  const { data: detail, isLoading, isError } = useQuery({
     queryKey: ["spotDetail", spot.id],
     queryFn: () => fetchDetail(spot.id),
     staleTime: 5 * 60_000,
+    retry: 1,
   });
 
   const d = detail ?? spot; // 즉시 base → 도착 시 운영시간·요금·갤러리 보강
+  const hasInfo = Boolean(d.summary || d.detail?.useTime || d.detail?.restDate || d.detail?.useFee || d.tel);
   const images = d.images ?? [];
   const [mainImg, setMainImg] = useState<string | null>(null);
   const [imgFailed, setImgFailed] = useState(false);
@@ -158,6 +160,10 @@ export function SpotDetailPanel({
           <InfoRow label="전화" value={d.tel} />
         </dl>
         {isLoading && <p className="mt-2 text-[12px] text-ink-faint">상세 정보 불러오는 중…</p>}
+        {isError && <p className="mt-2 text-[12px] text-seal-deep">상세 정보를 불러오지 못했어요. 기본 정보만 표시합니다.</p>}
+        {!isLoading && !isError && !hasInfo && (
+          <p className="mt-2 text-[12px] text-ink-faint">제공된 운영 정보가 아직 없어요.</p>
+        )}
 
         <div className="mt-5 border-t border-ink/10 pt-3">
           <SourceLabel />

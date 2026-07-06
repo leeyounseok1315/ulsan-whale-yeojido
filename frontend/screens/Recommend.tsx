@@ -12,9 +12,12 @@ import { isSeasonOpen } from "@/backend/lib/season";
 import {
   COMPANION_LABEL,
   DURATION_LABEL,
+  INTEREST_LABEL,
+  INTERESTS,
   type Companion,
   type Course,
   type Duration,
+  type Interest,
 } from "@/backend/lib/types";
 
 const COMPANIONS: Companion[] = ["family", "couple", "friends", "solo"];
@@ -23,16 +26,21 @@ const DURATIONS: Duration[] = ["day", "1n2d", "2n3d"];
 export default function RecommendPage() {
   const [companion, setCompanion] = useState<Companion>("family");
   const [duration, setDuration] = useState<Duration>("day");
+  const [interests, setInterests] = useState<Interest[]>([]);
   const [date, setDate] = useState(""); // 기준 날짜(시즌 검증용) — 비우면 오늘
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleInterest = (i: Interest) =>
+    setInterests((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
 
   async function recommend() {
     setLoading(true);
     setError(null);
     try {
       const qs = new URLSearchParams({ companion, duration });
+      if (interests.length) qs.set("interests", interests.join(","));
       if (date) qs.set("date", date);
       const res = await fetch(`/api/recommend?${qs.toString()}`);
       if (!res.ok) throw new Error();
@@ -86,6 +94,20 @@ export default function RecommendPage() {
           </div>
         </fieldset>
 
+        {/* 관심사 (복수 선택) */}
+        <fieldset className="mt-6">
+          <legend className="mb-2 text-sm font-semibold text-ink-soft">
+            관심사 <span className="font-normal text-ink-faint">· 여러 개 선택 가능(선택)</span>
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {INTERESTS.map((it) => (
+              <ToggleButton key={it} shape="pill" active={interests.includes(it)} onClick={() => toggleInterest(it)}>
+                {INTEREST_LABEL[it]}
+              </ToggleButton>
+            ))}
+          </div>
+        </fieldset>
+
         {/* 기준 날짜(시즌 확인) */}
         <fieldset className="mt-6">
           <legend className="mb-2 text-sm font-semibold text-ink-soft">
@@ -112,6 +134,11 @@ export default function RecommendPage() {
               <span className="rounded-full bg-ink px-3 py-1 text-sm font-semibold text-paper-light">
                 {COMPANION_LABEL[course.companion]} · {DURATION_LABEL[course.duration]}
               </span>
+              {course.interests.map((i) => (
+                <span key={i} className="rounded-full border border-seal/40 bg-seal/10 px-2.5 py-1 text-[11px] font-semibold text-seal-deep">
+                  {INTEREST_LABEL[i]}
+                </span>
+              ))}
               <span className="font-mono text-xs text-ink-faint">기준 {course.refDate}</span>
             </div>
 
