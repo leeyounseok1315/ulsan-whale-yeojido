@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { WhaleSpot } from "@/lib/types";
+import type { WhaleSpot } from "@/backend/lib/types";
 import { MAP_H, MAP_W, UlsanBaseMap, projectToMap } from "./UlsanBaseMap";
 import { WhaleMarker } from "./WhaleMarker";
 

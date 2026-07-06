@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { WHALE_THEMES, themeColor } from "@/lib/theme";
-import { isSeasonOpen } from "@/lib/season";
-import { Badge } from "@/components/ui/Badge";
-import { PetroglyphWhale } from "@/components/ui/PetroglyphWhale";
-import { SeasonBadge } from "@/components/ui/SeasonBadge";
-import { SourceLabel } from "@/components/ui/SourceLabel";
-import type { WhaleSpot } from "@/lib/types";
+import { WHALE_THEMES, themeColor } from "@/backend/lib/theme";
+import { isSeasonOpen } from "@/backend/lib/season";
+import { Badge } from "@/frontend/components/ui/Badge";
+import { PetroglyphWhale } from "@/frontend/components/ui/PetroglyphWhale";
+import { SeasonBadge } from "@/frontend/components/ui/SeasonBadge";
+import { SourceLabel } from "@/frontend/components/ui/SourceLabel";
+import type { WhaleSpot } from "@/backend/lib/types";
 
 const proxied = (src: string) => `/api/img?u=${encodeURIComponent(src)}`;
 

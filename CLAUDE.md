@@ -20,17 +20,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 지도: 고지도 비주얼(차별점) 우선이면 **Leaflet / MapLibre + 커스텀 스타일**, 한국 POI·개발 속도 우선이면 **카카오맵 SDK**. 좌표는 TourAPI `mapx/mapy` 사용.
 - 스타일 **Tailwind CSS** · i18n(영문, 후순위) **next-intl** · 배포 **Vercel** 권장.
 
-**폴더 구조.** 아직 코드 없음(스캐폴딩 전) — 확정 시 이 섹션 갱신. Next.js App Router 기준 제안:
+**폴더 구조.** 단일 Next.js 앱이되, **프론트/백엔드를 담당자별로 분리**했다. 실제 코드는 전부 `frontend/`·`backend/`에 있고, `app/`은 Next.js가 요구하는 **얇은 라우팅 글루(re-export)**만 둔다.
 
 ```
-app/            # 라우트·페이지·UI
-  api/          # BFF — TourAPI 프록시 (serviceKey는 여기서만 사용)
-components/     # 재사용 UI (지도, 코스 카드 등)
-lib/            # TourAPI 클라이언트, 캐시(Redis), 추천 엔진, 타입 정의
-db/             # 스키마·마이그레이션 (ERD.md 기준)
+frontend/         # 프론트(이숙빈) — 화면·UI 전부
+  screens/        # 화면 본체 (Landing·Map·Recommend·NotFound)
+  components/      # ui/(디자인 시스템) · map/(여지도 지도)
+  providers.tsx · globals.css(Tailwind v4 + 디자인 토큰)
+backend/          # 백엔드/BFF(이윤석) — 서버 로직 전부
+  routes/         # API 핸들러 본체 (spots·spotDetail·recommend·health·img·batchCollect)
+  lib/            # TourAPI 클라이언트(serviceKey 전용)·수집·정규화·태깅·detail·추천·캐시(Redis)·메트릭·타입
+    mock/         # mock 픽스처
+app/              # Next.js 필수 글루만 — layout + page.tsx/route.ts는 위 폴더로 re-export
+  api/…/route.ts  #   → backend/routes/*
+  */page.tsx      #   → frontend/screens/*
+instrumentation.ts # 서버 기동 예열(backend/lib 호출) · vercel.json(야간 Cron)
 ```
 
-전 TourAPI 호출은 서버 BFF(`app/api/`) 경유. 캐시 우선 조회 → 미스 시 원격 호출.
+전 TourAPI 호출은 서버 BFF(`app/api/` → `backend/routes/`) 경유. 캐시 우선 조회 → 미스 시 원격 호출. 프론트는 `fetch("/api/…")`로만 데이터 접근(직접 TourAPI 호출 금지). 각 폴더 `README.md`에 담당·구성 정리.
 
 ## 빌드 · 테스트 (개발 서버 · 테스트 · 배포)
 

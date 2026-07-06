@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import "./globals.css";
-import { Providers } from "./providers";
+import "@/frontend/globals.css";
+import { Providers } from "@/frontend/providers";
 
 export const metadata: Metadata = {
   title: "울산고래여지도 — 고래의 시선으로 그린 울산",

@@ -1,8 +1,8 @@
 "use client";
 
-import { Panel } from "@/components/ui/Panel";
-import { THEME_ORDER, WHALE_THEMES, themeColor } from "@/lib/theme";
-import type { WhaleSpot, WhaleThemeId } from "@/lib/types";
+import { Panel } from "@/frontend/components/ui/Panel";
+import { THEME_ORDER, WHALE_THEMES, themeColor } from "@/backend/lib/theme";
+import type { WhaleSpot, WhaleThemeId } from "@/backend/lib/types";
 
 // 범례 카르투슈 — 고래 테마(행정구역 아님)로 묶은 분류. 클릭하면 해당 테마만 본다.
 export function MapLegend({

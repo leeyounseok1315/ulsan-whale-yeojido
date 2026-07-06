@@ -1,6 +1,6 @@
-import { themeColor } from "@/lib/theme";
-import type { WhaleSpot } from "@/lib/types";
-import { WHALE_BODY_PATH, WHALE_FIN_PATH } from "@/components/ui/PetroglyphWhale";
+import { themeColor } from "@/backend/lib/theme";
+import type { WhaleSpot } from "@/backend/lib/types";
+import { WHALE_BODY_PATH, WHALE_FIN_PATH } from "@/frontend/components/ui/PetroglyphWhale";
 
 // 지도 위 고래 스팟 마커 — 인주 도장(낙관) 풍. 핵심 스팟은 사각 낙관 프레임을 두른다.
 // k(현재 줌)의 역수로 카운터 스케일해 줌과 무관하게 일정 크기를 유지한다.
