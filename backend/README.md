@@ -4,8 +4,9 @@
 
 ```
 backend/
-  routes/       API 핸들러 본체 — spots·spotDetail·recommend·health·img·batchCollect
+  routes/       API 핸들러 본체 — spots·spotDetail·recommend·health·img·batchCollect·adminPurge
   lib/
+    auth.ts       Cron/관리 엔드포인트 토큰 가드
     tourapi.ts    관광 OpenAPI(*2) 클라이언트 — serviceKey는 여기서만 사용
     collect.ts    전수 수집(페이지네이션)·빠른 수집(예열용)
     normalize.ts  정규화·중복제거·좌표 보정

@@ -7,8 +7,9 @@ import { recordBatch } from "./metrics";
 // BFF 데이터 서비스 레이어 — 캐시 우선 조회 → 미스 시 수집 파이프라인 → 테마 태깅.
 // app/api(BFF)에서만 import. 캐시 키 버저닝으로 큐레이션 변경을 반영한다.
 
-const CACHE_KEY = "spots:all:v1";
-const TTL_MS = 1000 * 60 * 30; // 30분 (야간 배치 갱신 주기 내 캐시 적중)
+const CACHE_KEY = "spots:all"; // 버전은 cache의 CACHE_VERSION 프리픽스가 담당
+const CACHE_TAG = "spots"; // 태그 퍼지 대상 (큐레이션 변경 시 purgeTag("spots"))
+const TTL_MS = 1000 * 60 * 30; // 30분 fresh (이후 SWR stale 구간에서 백그라운드 갱신)
 
 /** 정규화된 원시 → 고래 테마 스팟. core 또는 연관도 0.3 이상만, 핵심 스팟 우선 정렬. */
 function buildSpots(items: RawTourItem[]): WhaleSpot[] {
@@ -20,16 +21,12 @@ function buildSpots(items: RawTourItem[]): WhaleSpot[] {
     .sort((a, b) => Number(b.isCore) - Number(a.isCore) || b.relevance - a.relevance);
 }
 
-// 읽기 경로: 빠른 수집(순차) + in-flight 합치기 — 예열과 동시 요청이 수집을 중복 실행하지 않게 한다.
-let inflight: Promise<WhaleSpot[]> | null = null;
+// 읽기 경로: 빠른 수집(순차). 동시 요청 중복 제거·SWR은 cache 레이어가 담당.
 async function produceFast(): Promise<WhaleSpot[]> {
   return buildSpots((await collectFast()).items);
 }
 export async function getSpots(): Promise<WhaleSpot[]> {
-  return cached(CACHE_KEY, TTL_MS, () => {
-    if (!inflight) inflight = produceFast().finally(() => (inflight = null));
-    return inflight;
-  });
+  return cached(CACHE_KEY, TTL_MS, produceFast, { tags: [CACHE_TAG] });
 }
 
 export async function getSpot(id: string): Promise<WhaleSpot | null> {
@@ -42,7 +39,7 @@ export async function refreshSpots() {
   try {
     const { items, stats } = await collectAndNormalize();
     const spots = buildSpots(items);
-    await setCache(CACHE_KEY, TTL_MS, spots);
+    await setCache(CACHE_KEY, TTL_MS, spots, { tags: [CACHE_TAG] });
     recordBatch(true, spots.length);
     return { ok: true as const, count: spots.length, normalize: stats, durationMs: Date.now() - start };
   } catch (err) {

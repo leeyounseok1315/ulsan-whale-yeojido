@@ -58,7 +58,7 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
   if (!base) return null;
   if (isMockMode()) return base; // mock 픽스처는 이미 detail 포함
 
-  return cached(`detail:${id}:v1`, TTL_MS, async () => {
+  return cached(`detail:${id}`, TTL_MS, async () => {
     const [intro, images, common] = await Promise.all([
       detailIntro(id, base.contentTypeId).catch(() => null),
       detailImages(id).catch(() => [] as string[]),
@@ -84,5 +84,5 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
         useFee: pick(intro, INTRO_FIELDS.useFee),
       },
     };
-  });
+  }, { tags: ["spots", "detail"] });
 }

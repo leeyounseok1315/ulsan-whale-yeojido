@@ -72,6 +72,7 @@ export interface SpotDetail {
 
 export type Companion = "family" | "couple" | "friends" | "solo";
 export type Duration = "day" | "1n2d" | "2n3d";
+export type Interest = "history" | "nature" | "experience" | "observation" | "food";
 
 export const COMPANION_LABEL: Record<Companion, string> = {
   family: "가족",
@@ -84,6 +85,15 @@ export const DURATION_LABEL: Record<Duration, string> = {
   "1n2d": "1박 2일",
   "2n3d": "2박 3일",
 };
+// 관심사 — 추천 입력 도메인 확장(W4). 스팟 점수에 가중치로 반영.
+export const INTEREST_LABEL: Record<Interest, string> = {
+  history: "역사·유산",
+  nature: "자연·경관",
+  experience: "체험·가족",
+  observation: "고래 관찰",
+  food: "미식",
+};
+export const INTERESTS: Interest[] = ["history", "nature", "experience", "observation", "food"];
 
 export interface SeasonRule {
   openMonths: number[]; // 1~12. 예: 고래바다여행선 4~10월
@@ -102,6 +112,7 @@ export interface CourseStop {
 export interface Course {
   companion: Companion;
   duration: Duration;
+  interests: Interest[];
   refDate: string; // 기준 날짜(외부 주입 가능 — 시즌 검증용)
   stops: CourseStop[];
   seasonNotes: string[];
