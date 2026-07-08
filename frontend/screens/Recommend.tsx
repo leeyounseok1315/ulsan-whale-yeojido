@@ -7,6 +7,7 @@ import { Card } from "@/frontend/components/ui/Card";
 import { SeasonBadge } from "@/frontend/components/ui/SeasonBadge";
 import { SourceLabel } from "@/frontend/components/ui/SourceLabel";
 import { ToggleButton } from "@/frontend/components/ui/ToggleButton";
+import { CourseMap } from "@/frontend/components/map/CourseMap";
 import { themeColor, WHALE_THEMES } from "@/backend/lib/theme";
 import { isSeasonOpen } from "@/backend/lib/season";
 import {
@@ -147,6 +148,11 @@ export default function RecommendPage() {
                 {note}
               </p>
             ))}
+
+            {/* 여지도 위 코스 경로 */}
+            <div className="mb-6 mt-4">
+              <CourseMap course={course} />
+            </div>
 
             {Array.from({ length: days }, (_, di) => di + 1).map((day) => (
               <div key={day} className="mt-6">

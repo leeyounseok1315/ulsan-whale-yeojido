@@ -115,5 +115,6 @@ export interface Course {
   interests: Interest[];
   refDate: string; // 기준 날짜(외부 주입 가능 — 시즌 검증용)
   stops: CourseStop[];
+  distanceKm: number; // 코스 총 이동 거리(순서화 반영)
   seasonNotes: string[];
 }

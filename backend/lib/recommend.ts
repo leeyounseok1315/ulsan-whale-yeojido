@@ -47,6 +47,44 @@ function noteFor(spot: WhaleSpot, companion: Companion): string {
   }
 }
 
+function haversineKm(a: WhaleSpot, b: WhaleSpot): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// 선택된 스팟을 최근접 이웃으로 순서화(지그재그 최소화). 시작은 최고 점수 스팟.
+function orderByRoute(spots: WhaleSpot[]): WhaleSpot[] {
+  if (spots.length <= 2) return spots;
+  const remaining = spots.slice(1);
+  const route = [spots[0]];
+  while (remaining.length) {
+    const last = route[route.length - 1];
+    let bi = 0;
+    let bd = Infinity;
+    remaining.forEach((s, i) => {
+      const d = haversineKm(last, s);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    });
+    route.push(remaining.splice(bi, 1)[0]);
+  }
+  return route;
+}
+
+function totalDistanceKm(spots: WhaleSpot[]): number {
+  let d = 0;
+  for (let i = 1; i < spots.length; i++) d += haversineKm(spots[i - 1], spots[i]);
+  return Math.round(d * 10) / 10;
+}
+
 export function buildCourse(
   spots: WhaleSpot[],
   companion: Companion,
@@ -74,8 +112,9 @@ export function buildCourse(
   const days = DAYS[duration];
   const need = Math.min(ranked.length, days * STOPS_PER_DAY);
   const chosen = ranked.slice(0, need);
+  const routed = orderByRoute(chosen); // 점수로 '선별' → 거리로 '순서화'
 
-  const stops: CourseStop[] = chosen.map((spot, i) => {
+  const stops: CourseStop[] = routed.map((spot, i) => {
     const day = Math.floor(i / STOPS_PER_DAY) + 1;
     const order = (i % STOPS_PER_DAY) + 1;
     return {
@@ -93,6 +132,7 @@ export function buildCourse(
     interests,
     refDate: refDate ?? new Date().toISOString().slice(0, 10),
     stops,
+    distanceKm: totalDistanceKm(routed),
     seasonNotes,
   };
 }
