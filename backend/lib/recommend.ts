@@ -7,7 +7,11 @@ import { CRUISE_SEASON, isSeasonOpen } from "./season";
 
 const DAYS: Record<Duration, number> = { day: 1, "1n2d": 2, "2n3d": 3 };
 const STOPS_PER_DAY = 3;
-const VISIT_HOURS = [10, 13, 16]; // 하루 방문 시각
+const DAY_START_MIN = 10 * 60; // 하루 시작 10:00
+const DWELL_MIN = 80; // 지점당 체류(분)
+const SPEED_KMH = 32; // 이동 평균 속도(도심 근사)
+const fmtTime = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 // 동행 유형별 테마 가중치 (결과 차별화).
 const COMPANION_WEIGHT: Record<Companion, Record<WhaleThemeId, number>> = {
@@ -114,16 +118,21 @@ export function buildCourse(
   const chosen = ranked.slice(0, need);
   const routed = orderByRoute(chosen); // 점수로 '선별' → 거리로 '순서화'
 
+  // 이동시간 반영 스케줄링: 하루 10:00 시작, 지점당 체류 + 구간 이동시간으로 도착 시각 계산.
+  let prev: WhaleSpot | null = null;
+  let cur = DAY_START_MIN;
   const stops: CourseStop[] = routed.map((spot, i) => {
     const day = Math.floor(i / STOPS_PER_DAY) + 1;
     const order = (i % STOPS_PER_DAY) + 1;
-    return {
-      spot,
-      day,
-      order,
-      arrive: `${String(VISIT_HOURS[order - 1]).padStart(2, "0")}:00`,
-      note: noteFor(spot, companion),
-    };
+    let legKm = 0;
+    if (order === 1) {
+      cur = DAY_START_MIN; // 하루 시작
+    } else {
+      legKm = Math.round(haversineKm(prev as WhaleSpot, spot) * 10) / 10;
+      cur = Math.min(cur + DWELL_MIN + Math.round((legKm / SPEED_KMH) * 60), 20 * 60);
+    }
+    prev = spot;
+    return { spot, day, order, arrive: fmtTime(cur), legKm, note: noteFor(spot, companion) };
   });
 
   return {

@@ -169,9 +169,12 @@ export default function RecommendPage() {
                           style={{ backgroundColor: themeColor(stop.spot.theme) }}
                         />
                         <Card className="p-4">
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
                             <span className="font-mono text-sm font-semibold text-ink-soft">{stop.arrive}</span>
-                            <span className="text-[11px] text-ink-faint">{WHALE_THEMES[stop.spot.theme].label}</span>
+                            {stop.legKm > 0 && (
+                              <span className="font-mono text-[11px] text-ink-faint">· 이동 {stop.legKm}km</span>
+                            )}
+                            <span className="ml-auto text-[11px] text-ink-faint">{WHALE_THEMES[stop.spot.theme].label}</span>
                           </div>
                           <h3 className="mt-1 font-display text-lg font-bold text-ink">{stop.spot.title}</h3>
                           {stop.spot.seasonal && (

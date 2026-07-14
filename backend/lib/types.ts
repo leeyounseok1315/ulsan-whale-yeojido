@@ -105,7 +105,8 @@ export interface CourseStop {
   spot: WhaleSpot;
   day: number;
   order: number;
-  arrive: string; // "10:00"
+  arrive: string; // "10:00" — 이동시간 반영 계산
+  legKm: number; // 같은 날 직전 지점에서의 이동 거리(km). 하루 첫 지점은 0.
   note: string;
 }
 
