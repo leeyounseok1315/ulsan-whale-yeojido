@@ -59,7 +59,8 @@ export interface WhaleSpot {
   isCore: boolean; // 핵심 5대 고래 스팟 화이트리스트
   isWhaleThemed: boolean; // 고래 테마 여부 (= isCore || relevance>=임계) — 태깅 엔진 출력
   relevance: number; // 0~1 고래 연관도
-  seasonal?: SeasonRule; // 시즌성(고래바다여행선 등)
+  seasonal?: SeasonRule; // 가용성 시즌(고래바다여행선 운항 등) — 휴지기엔 코스에서 제외
+  peak?: PeakSeason; // 제철 — 해당 시기에 추천 가중치·배지
   detail?: SpotDetail;
   images?: string[]; // 상세 갤러리(detailImage2) — 상세 조회 시에만 채움
 }
@@ -101,12 +102,26 @@ export interface SeasonRule {
   closedNote: string;
 }
 
+/** 제철(성수기) — 가용성(SeasonRule)과 별개로 '지금이 가장 좋은 때'. 추천 가중치·배지에 사용. */
+export interface PeakSeason {
+  months: number[]; // 1~12
+  label: string; // 예: "억새 절정"
+}
+
+/** 시즌 비가용 스팟을 대체한 기록 (비운항기 대체 안내). */
+export interface Substitution {
+  excludedTitle: string;
+  replacedByTitle: string;
+  reason: string; // 예: "고래바다여행선 운항 휴지기(11~3월)"
+}
+
 export interface CourseStop {
   spot: WhaleSpot;
   day: number;
   order: number;
   arrive: string; // "10:00" — 이동시간 반영 계산
   legKm: number; // 같은 날 직전 지점에서의 이동 거리(km). 하루 첫 지점은 0.
+  isPeak: boolean; // 기준 날짜 기준 제철인지
   note: string;
 }
 
@@ -117,5 +132,6 @@ export interface Course {
   refDate: string; // 기준 날짜(외부 주입 가능 — 시즌 검증용)
   stops: CourseStop[];
   distanceKm: number; // 코스 총 이동 거리(순서화 반영)
+  substitutions: Substitution[]; // 시즌 비가용 → 대체 스팟 기록
   seasonNotes: string[];
 }

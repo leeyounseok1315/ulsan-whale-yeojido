@@ -1,5 +1,5 @@
 import type { RawTourItem, WhaleSpot } from "./types";
-import { toWhaleSpot } from "./adapter";
+import { attachSeasonRules, toWhaleSpot } from "./adapter";
 import { cached, setCache } from "./cache";
 import { collectAndNormalize, collectFast, isMockMode } from "./collect";
 import { recordBatch } from "./metrics";
@@ -26,7 +26,8 @@ async function produceFast(): Promise<WhaleSpot[]> {
   return buildSpots((await collectFast()).items);
 }
 export async function getSpots(): Promise<WhaleSpot[]> {
-  return cached(CACHE_KEY, TTL_MS, produceFast, { tags: [CACHE_TAG] });
+  // 시즌 규칙은 캐시된 payload가 아닌 현재 코드 기준으로 다시 부착 — 규칙·문구 수정이 즉시 반영된다.
+  return (await cached(CACHE_KEY, TTL_MS, produceFast, { tags: [CACHE_TAG] })).map(attachSeasonRules);
 }
 
 export async function getSpot(id: string): Promise<WhaleSpot | null> {

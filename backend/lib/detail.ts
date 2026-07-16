@@ -1,5 +1,6 @@
 import type { WhaleSpot } from "./types";
 import { getSpot } from "./data";
+import { attachSeasonRules } from "./adapter";
 import { detailCommon, detailImages, detailIntro } from "./tourapi";
 import { cached } from "./cache";
 import { sanitize } from "./sanitize";
@@ -64,7 +65,8 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
   if (!base) return null;
   if (isMockMode()) return base; // mock 픽스처는 이미 detail 포함
 
-  return cached(`detail:${id}`, TTL_MS, async () => {
+  // 상세 캐시에도 base가 통째로 들어가므로, 시즌 규칙은 반환 직전에 현재 코드 기준으로 다시 부착한다.
+  return attachSeasonRules(await cached(`detail:${id}`, TTL_MS, async () => {
     const [intro, images, common] = await Promise.all([
       detailIntro(id, base.contentTypeId).catch(() => null),
       detailImages(id).catch(() => [] as string[]),
@@ -105,5 +107,5 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
         useFee: pick(intro, INTRO_FIELDS.useFee),
       },
     };
-  }, { tags: ["spots", "detail"] });
+  }, { tags: ["spots", "detail"] }));
 }

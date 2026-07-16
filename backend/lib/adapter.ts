@@ -5,8 +5,21 @@ import {
   type WhaleThemeId,
 } from "./types";
 import { sanitize } from "./sanitize";
-import { CRUISE_SEASON } from "./season";
+import { CRUISE_SEASON, peakOf } from "./season";
 import { CORE_BY_ID, LINKED_SPOTS } from "./coreSpots";
+
+/**
+ * 시즌 규칙(가용성 seasonal · 제철 peak)을 스팟에 부착한다.
+ * 이 둘은 원격 데이터가 아니라 코드 설정이라, 캐시된 스팟에도 읽기 시점에 다시 붙인다.
+ * (캐시에 구워두면 규칙·문구를 고쳐도 캐시 만료 전까지 옛 안내가 그대로 나간다)
+ */
+export function attachSeasonRules(spot: WhaleSpot): WhaleSpot {
+  return {
+    ...spot,
+    seasonal: CORE_BY_ID[spot.id]?.seasonal ? CRUISE_SEASON : undefined,
+    peak: peakOf(spot.id),
+  };
+}
 
 // 강한 고래 토큰(어떤 콘텐츠 타입이든 인정) vs 지명 토큰(관광형 타입에서만 인정).
 const STRONG_KEYWORDS: [string, number][] = [
@@ -50,7 +63,7 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
   const theme = core?.theme ?? linked ?? inferTheme(text);
   const relevance = core ? 1 : linked ? 0.6 : relevanceOf(text, raw.contenttypeid);
 
-  return {
+  return attachSeasonRules({
     id,
     title: sanitize(raw.title),
     theme,
@@ -65,7 +78,6 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
     isCore: Boolean(core),
     isWhaleThemed: Boolean(core) || relevance >= WHALE_RELEVANCE_THRESHOLD,
     relevance,
-    seasonal: core?.seasonal ? CRUISE_SEASON : undefined,
     // 절대규칙 #1: 사용자에게 노출되는 detail 필드도 파싱 경계에서 sanitize.
     // 라이브 전환 시 detail* 응답의 운영시간/요금/휴무 텍스트에 섞일 수 있는 공사 표기를 차단.
     detail: {
@@ -73,5 +85,5 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
       restDate: raw.restdate ? sanitize(raw.restdate) : undefined,
       useFee: raw.usefee ? sanitize(raw.usefee) : undefined,
     },
-  };
+  });
 }

@@ -13,8 +13,8 @@ backend/
     adapter.ts    원시→WhaleSpot 매핑 + 고래 테마 태깅 + 공사표기 sanitize
     coreSpots.ts  핵심 5대 고래 스팟 큐레이션(실 contentid)
     detail.ts     detail* 통합(운영시간·요금·갤러리)
-    recommend.ts  코스 추천 엔진 v0
-    season.ts     시즌(고래바다여행선 4~10월, 날짜 주입)
+    recommend.ts  코스 추천 엔진(동행·기간·관심사·제철 가중 → 거리 순서화 → 시간 스케줄)
+    season.ts     시즌 — 가용성(고래바다여행선 4~10월)·제철(peak)·대체 스팟, 날짜 주입
     cache.ts      캐시(Upstash Redis 우선 + 인메모리 폴백)
     metrics.ts    호출 쿼터·배치 이력·헬스(Redis 공유)
     data.ts       BFF 서비스 레이어(캐시→수집→태깅)
@@ -25,5 +25,7 @@ backend/
 ## 알아둘 것
 - `app/api/*/route.ts`는 **Next.js 라우팅 글루**로, 여기 핸들러를 얇게 연결(re-export)만 합니다. 실제 로직은 `backend/routes/`·`backend/lib/`를 고치세요.
 - **비밀값(serviceKey·Upstash 토큰)은 서버 전용** — `.env.local`에만, 절대 커밋 금지.
+- **시즌 규칙은 캐시에 굽지 않습니다.** `seasonal`·`peak`는 원격 데이터가 아니라 코드 설정이라, `attachSeasonRules()`로 **읽기 시점에** 다시 붙입니다(`data.getSpots`·`detail.getSpotDetail`). 규칙·문구를 고치면 캐시 만료를 기다리지 않고 즉시 반영됩니다.
+- 시즌 분기는 `?date=YYYY-MM-DD`로 검증하세요 — 예: `/api/recommend?companion=family&duration=1n2d&date=2026-01-15`(비운항→대체), `…&date=2026-06-15`(성수기).
 - 절대규칙: GreenTourService 지역기반 API 미사용, 지역 수집은 `areaBasedList2`만.
 - 서버 기동 예열은 루트 `instrumentation.ts`가 `backend/lib`를 호출.
