@@ -1,5 +1,6 @@
 import {
   CONTENT_TYPE_LABEL,
+  type EventPeriod,
   type RawTourItem,
   type WhaleSpot,
   type WhaleThemeId,
@@ -17,8 +18,22 @@ export function attachSeasonRules(spot: WhaleSpot): WhaleSpot {
   return {
     ...spot,
     seasonal: CORE_BY_ID[spot.id]?.seasonal ? CRUISE_SEASON : undefined,
-    peak: peakOf(spot.id),
+    peak: peakOf(spot.id, spot.eventPeriod),
   };
+}
+
+/**
+ * detailIntro2 응답에서 축제 개최기간(YYYYMMDD)을 뽑는다.
+ * 수집 엔드포인트(areaBasedList2·searchKeyword2·detailCommon2)는 이 필드를 주지 않는다 — 실측 확인.
+ */
+export function eventPeriodOf(intro: Record<string, unknown> | null | undefined): EventPeriod | undefined {
+  const ymd = (v: unknown) => {
+    const s = String(v ?? "").trim();
+    return /^\d{8}$/.test(s) ? s : "";
+  };
+  const start = ymd(intro?.eventstartdate);
+  if (!start) return undefined;
+  return { start, end: ymd(intro?.eventenddate) || start };
 }
 
 // 강한 고래 토큰(어떤 콘텐츠 타입이든 인정) vs 지명 토큰(관광형 타입에서만 인정).

@@ -70,20 +70,31 @@ async function rawSet<T>(vk: string, env: Envelope<T>, hardMs: number, tags: str
   }
 }
 
-function revalidate<T>(vk: string, freshMs: number, hardMs: number, producer: () => Promise<T>, tags: string[]) {
-  if (inflight.has(vk)) return;
+/**
+ * 생산 → 저장 → 스냅샷. 동시 호출은 inflight로 합친다.
+ * SWR 백그라운드 갱신과 miss 생산이 **같은 promise를 공유**하므로, 반드시 값(T)으로 resolve해야 한다.
+ * (과거 버그: 백그라운드 갱신 promise가 값을 return하지 않아, 갱신 중 들어온 miss 요청이
+ *  undefined를 받고 호출부에서 TypeError로 죽었다)
+ * 생산 실패 시 직전 정상 스냅샷으로 폴백, 스냅샷도 없으면 reject.
+ */
+function produce<T>(vk: string, freshMs: number, hardMs: number, producer: () => Promise<T>, tags: string[]): Promise<T> {
+  const existing = inflight.get(vk) as Promise<T> | undefined;
+  if (existing) return existing;
   const pr = (async () => {
     try {
       const v = await producer();
-      await rawSet(vk, { v, staleAt: Date.now() + freshMs }, hardMs, tags);
+      await rawSet(vk, { v, staleAt: Date.now() + freshMs }, hardMs, tags).catch(() => {});
       snapshots.set(vk, v);
-    } catch {
-      /* 갱신 실패 시 기존 stale 유지 */
+      return v;
+    } catch (err) {
+      if (snapshots.has(vk)) return snapshots.get(vk) as T; // 데모 당일 빈 화면 방지
+      throw err;
     } finally {
       inflight.delete(vk);
     }
   })();
   inflight.set(vk, pr);
+  return pr;
 }
 
 /**
@@ -108,27 +119,12 @@ export async function cached<T>(
   }
   if (env) {
     if (Date.now() < env.staleAt) return env.v; // fresh
-    revalidate(vk, freshMs, hardMs, producer, tags); // stale → 즉시 반환 + 뒤에서 갱신
+    // stale → 즉시 반환 + 뒤에서 갱신. 실패는 삼키되(기존 stale 유지) unhandled rejection은 막는다.
+    void produce(vk, freshMs, hardMs, producer, tags).catch(() => {});
     return env.v;
   }
 
-  // miss — 동시 요청 합치기
-  if (inflight.has(vk)) return inflight.get(vk) as Promise<T>;
-  const pr = (async () => {
-    try {
-      const v = await producer();
-      await rawSet(vk, { v, staleAt: Date.now() + freshMs }, hardMs, tags).catch(() => {});
-      snapshots.set(vk, v);
-      return v;
-    } catch (err) {
-      if (snapshots.has(vk)) return snapshots.get(vk) as T; // 데모 당일 빈 화면 방지
-      throw err;
-    } finally {
-      inflight.delete(vk);
-    }
-  })();
-  inflight.set(vk, pr);
-  return pr as Promise<T>;
+  return produce(vk, freshMs, hardMs, producer, tags); // miss — 동시 요청은 inflight로 합쳐짐
 }
 
 /** 강제 갱신(배치) — 결과를 직접 캐시에 기록. */

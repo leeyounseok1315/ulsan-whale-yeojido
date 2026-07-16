@@ -1,6 +1,6 @@
 import type { RawTourItem } from "./types";
 import { MOCK_RAW_ITEMS } from "./mock/spots";
-import { areaBasedListPage, detailCommon, searchKeyword } from "./tourapi";
+import { areaBasedListPage, detailCommon, searchKeyword, type CallOpts } from "./tourapi";
 import { normalizeRaw, type NormalizeStats } from "./normalize";
 import { CORE_FETCH_IDS, LINKED_FETCH_IDS } from "./coreSpots";
 
@@ -79,26 +79,61 @@ export async function collectAndNormalize(): Promise<{ items: RawTourItem[]; sta
 // 빠른 수집(요청 경로·예열용) — 전수 areaBasedList 스캔 대신 핵심·연계 단건 + 고래 키워드만 '병렬'로.
 // 큐레이션 출력 집합은 전수 수집과 동일하지만 호출 수가 적고 동시 실행이라 콜드 지연을 크게 줄인다.
 // (전수 수집 collectAllRaw는 야간 배치 refreshSpots에서 유지)
-export async function collectFast(): Promise<{ items: RawTourItem[]; stats: NormalizeStats }> {
-  if (isMockMode()) return normalizeRaw(MOCK_RAW_ITEMS);
-  // 순차 호출. (병렬 버스트는 data.go.kr 동시요청 제한에 걸려 타임아웃·누락 발생)
+// 요청 경로 설정.
+// 동시성 3: 실측으로 순차 17.4초 → 3.3초, 실패 0건. (예전 주석의 '병렬 버스트 스로틀링'은
+// 9건을 한꺼번에 쏘던 때 얘기다. 3건씩은 data.go.kr가 문제없이 받는다)
+// 예산은 '조용히 잘라내는 상한'이 아니라 '병목 시 실패시키는 안전장치'다 —
+// 부분 수집을 성공으로 캐시하면 큐레이션 스팟이 빠진 지도가 그대로 굳는다(실제로 12건→6건이 됐다).
+const FAST_CONCURRENCY = 3;
+const FAST_BUDGET_MS = 15_000;
+const FAST_CALL: CallOpts = { timeoutMs: 5000, maxTries: 2 };
+
+/** 고정 동시성 풀 — 순서 무관, 각 작업은 스스로 성패를 기록한다. */
+async function runPool(tasks: Array<() => Promise<void>>, size: number): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(size, tasks.length) }, async () => {
+      while (next < tasks.length) await tasks[next++]();
+    }),
+  );
+}
+
+export type FastResult = { items: RawTourItem[]; stats: NormalizeStats; missing: string[] };
+
+export async function collectFast(): Promise<FastResult> {
+  if (isMockMode()) return { ...normalizeRaw(MOCK_RAW_ITEMS), missing: [] };
+
   const raw: RawTourItem[] = [];
-  for (const id of [...CORE_FETCH_IDS, ...LINKED_FETCH_IDS]) {
-    try {
-      const it = await detailCommon(id);
-      if (it) raw.push(it);
-    } catch (e) {
-      console.warn(`[collectFast] 단건 ${id} 실패:`, e instanceof Error ? e.message : e);
-    }
-    await sleep(POLITENESS_MS);
+  const missing: string[] = [];
+  const tasks: Array<() => Promise<void>> = [
+    ...[...CORE_FETCH_IDS, ...LINKED_FETCH_IDS].map((id) => async () => {
+      try {
+        const it = await detailCommon(id, FAST_CALL);
+        if (it) raw.push(it);
+        else missing.push(id);
+      } catch (e) {
+        console.warn(`[collectFast] 단건 ${id} 실패:`, e instanceof Error ? e.message : e);
+        missing.push(id);
+      }
+    }),
+    ...WHALE_KEYWORDS.map((kw) => async () => {
+      try {
+        raw.push(...(await searchKeyword(kw, FAST_CALL)));
+      } catch (e) {
+        console.warn(`[collectFast] 키워드 "${kw}" 실패:`, e instanceof Error ? e.message : e);
+        missing.push(`kw:${kw}`);
+      }
+    }),
+  ];
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const budget = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`[collectFast] 수집 예산 ${FAST_BUDGET_MS}ms 초과`)), FAST_BUDGET_MS);
+    });
+    await Promise.race([runPool(tasks, FAST_CONCURRENCY), budget]);
+  } finally {
+    clearTimeout(timer);
   }
-  for (const kw of WHALE_KEYWORDS) {
-    try {
-      raw.push(...(await searchKeyword(kw)));
-    } catch (e) {
-      console.warn(`[collectFast] 키워드 "${kw}" 실패:`, e instanceof Error ? e.message : e);
-    }
-    await sleep(POLITENESS_MS);
-  }
-  return normalizeRaw(raw);
+  return { ...normalizeRaw(raw), missing };
 }

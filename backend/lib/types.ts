@@ -61,6 +61,7 @@ export interface WhaleSpot {
   relevance: number; // 0~1 고래 연관도
   seasonal?: SeasonRule; // 가용성 시즌(고래바다여행선 운항 등) — 휴지기엔 코스에서 제외
   peak?: PeakSeason; // 제철 — 해당 시기에 추천 가중치·배지
+  eventPeriod?: EventPeriod; // 축제(15)만 — 개최기간. 기간 밖이면 코스에 편성하지 않는다.
   detail?: SpotDetail;
   images?: string[]; // 상세 갤러리(detailImage2) — 상세 조회 시에만 채움
 }
@@ -106,6 +107,16 @@ export interface SeasonRule {
 export interface PeakSeason {
   months: number[]; // 1~12
   label: string; // 예: "억새 절정"
+}
+
+/**
+ * 축제 개최기간 (YYYYMMDD). detailIntro2에만 있는 값 —
+ * areaBasedList2·searchKeyword2·detailCommon2 응답에는 들어 있지 않다(실측).
+ * 추천 엔진이 '지금 열리지 않는 축제'를 코스에 넣지 않기 위해 필요.
+ */
+export interface EventPeriod {
+  start: string;
+  end: string;
 }
 
 /** 시즌 비가용 스팟을 대체한 기록 (비운항기 대체 안내). */

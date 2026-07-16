@@ -34,8 +34,15 @@ const MAX_TRIES = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ApiPage = { items: RawTourItem[]; totalCount: number };
+/** 요청 경로(콜드 수집)는 배치보다 짧은 타임아웃·적은 재시도를 쓴다 — 사용자를 기다리게 하지 않으려고. */
+export type CallOpts = { timeoutMs?: number; maxTries?: number };
 
-async function callBody(endpoint: string, params: Record<string, string>, withArea = true): Promise<ApiPage> {
+async function callBody(
+  endpoint: string,
+  params: Record<string, string>,
+  withArea = true,
+  opts: CallOpts = {},
+): Promise<ApiPage> {
   if (!KEY) throw new Error("TOUR_API_SERVICE_KEY 미설정 — mock 모드로 동작해야 합니다.");
   if (!canCall()) {
     const q = quotaStatus();
@@ -47,10 +54,13 @@ async function callBody(endpoint: string, params: Record<string, string>, withAr
   const qs = new URLSearchParams({ serviceKey: KEY, ...common, ...params });
   const url = `${BASE}/${endpoint}?${qs.toString()}`;
 
+  const timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
+  const maxTries = opts.maxTries ?? MAX_TRIES;
+
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+  for (let attempt = 1; attempt <= maxTries; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
       clearTimeout(timer);
@@ -84,13 +94,13 @@ export function areaBasedListPage(contentTypeId: string, pageNo = 1, numOfRows =
 }
 
 /** '고래/장생포/반구대' 키워드 매칭 → 테마 태깅·수집 보강 (areaCode=7). */
-export async function searchKeyword(keyword: string): Promise<RawTourItem[]> {
-  return (await callBody("searchKeyword2", { keyword, pageNo: "1", numOfRows: "100" })).items;
+export async function searchKeyword(keyword: string, opts?: CallOpts): Promise<RawTourItem[]> {
+  return (await callBody("searchKeyword2", { keyword, pageNo: "1", numOfRows: "100" }, true, opts)).items;
 }
 
 /** contentId 단건 상세 (areaCode 미포함). 지역 목록에 안 잡히는 핵심 스팟(예: 반구대) 보장 수집·overview 보강. */
-export async function detailCommon(contentId: string): Promise<RawTourItem | null> {
-  const { items } = await callBody("detailCommon2", { contentId }, false);
+export async function detailCommon(contentId: string, opts?: CallOpts): Promise<RawTourItem | null> {
+  const { items } = await callBody("detailCommon2", { contentId }, false, opts);
   return items[0] ?? null;
 }
 

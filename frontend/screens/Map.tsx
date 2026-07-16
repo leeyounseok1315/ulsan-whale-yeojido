@@ -27,6 +27,13 @@ export default function MapPage() {
   const spots = data ?? [];
   const shown = useMemo(() => (active ? spots.filter((s) => s.theme === active) : spots), [spots, active]);
 
+  // 테마를 바꿔 선택 스팟이 지도에서 사라지면 상세 패널도 닫는다 —
+  // 지도에 없는 마커의 패널만 덩그러니 남아 지도와 패널 상태가 어긋나던 문제.
+  const filterTheme = (t: WhaleThemeId | null) => {
+    setActive(t);
+    if (t && selected && selected.theme !== t) setSelected(null);
+  };
+
   return (
     <main className="relative h-dvh w-full overflow-hidden">
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 bg-gradient-to-b from-paper/95 to-transparent px-4 py-3">
@@ -43,7 +50,7 @@ export default function MapPage() {
 
       {/* 데스크톱 범례 */}
       <div className="absolute left-4 top-16 z-20 hidden md:block">
-        <MapLegend spots={spots} active={active} onToggle={setActive} />
+        <MapLegend spots={spots} active={active} onToggle={filterTheme} />
       </div>
 
       {/* 모바일 테마 칩 */}
@@ -52,7 +59,7 @@ export default function MapPage() {
         aria-label="고래 테마 필터"
         className="absolute inset-x-0 top-14 z-20 flex gap-2 overflow-x-auto px-4 py-1 md:hidden"
       >
-        <ToggleButton active={active === null} tone="ink" onClick={() => setActive(null)}>
+        <ToggleButton active={active === null} tone="ink" onClick={() => filterTheme(null)}>
           전체 {spots.length}
         </ToggleButton>
         {THEME_ORDER.map((t) => (
@@ -61,7 +68,7 @@ export default function MapPage() {
             active={active === t}
             tone="ink"
             color={themeColor(t)}
-            onClick={() => setActive(active === t ? null : t)}
+            onClick={() => filterTheme(active === t ? null : t)}
           >
             {WHALE_THEMES[t].label}
           </ToggleButton>
@@ -81,7 +88,7 @@ export default function MapPage() {
           </button>
         </StatusScreen>
       ) : (
-        <YeojidoMap spots={shown} selectedId={selected?.id ?? null} onSelect={setSelected} />
+        <YeojidoMap spots={shown} selectedId={selected?.id ?? null} onSelect={setSelected} panelOpen={Boolean(selected)} />
       )}
 
       {selected && <SpotDetailPanel spot={selected} onClose={() => setSelected(null)} />}

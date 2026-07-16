@@ -3,12 +3,22 @@ import type {
   Course,
   CourseStop,
   Duration,
+  EventPeriod,
   Interest,
   Substitution,
   WhaleSpot,
   WhaleThemeId,
 } from "./types";
-import { CRUISE_SEASON, closedRangeLabel, isPeak, isSeasonOpen, SEASON_SUBSTITUTE } from "./season";
+import {
+  CRUISE_SEASON,
+  isEventRunning,
+  isPeak,
+  isSeasonOpen,
+  openRangeLabel,
+  resolveRefDate,
+  SEASON_SUBSTITUTE,
+  unavailableReason,
+} from "./season";
 
 // 코스 추천 엔진 — 규칙 기반 (과설계 금지).
 // 입력: 동행 유형 + 체류 기간 + 관심사 + 기준 날짜(시즌 외부 주입). 출력: 일자·시간 코스.
@@ -121,31 +131,33 @@ export function buildCourse(
   interests: Interest[] = [],
   refDate?: string,
 ): Course {
-  const cruiseOpen = isSeasonOpen(CRUISE_SEASON, refDate);
+  const onDate = resolveRefDate(refDate); // 없거나 형식이 틀리면 오늘 — 엔진 내부는 항상 유효 날짜
   const seasonNotes: string[] = [];
 
-  // 가용성 시즌 휴지기인 스팟은 코스에서 제외 — id가 아닌 seasonal 기준(mock/live 공통).
-  const closedSeasonal = spots.filter((s) => s.seasonal && !isSeasonOpen(s.seasonal, refDate));
-  const pool = spots.filter((s) => !closedSeasonal.includes(s));
-  seasonNotes.push(
-    cruiseOpen
-      ? `${CRUISE_SEASON.label} 시즌이에요 (4~10월). 바다 위 코스를 추천에 넣었어요.`
-      : CRUISE_SEASON.closedNote,
-  );
+  // 코스에서 빠지는 스팟 두 종류:
+  //  ① 가용성 휴지기(고래바다여행선 비운항 등) — id가 아닌 seasonal 기준(mock/live 공통)
+  //  ② 기준일에 열리지 않는 축제 — 개최기간을 모르면 넣지 않는다(모르는 걸 '열린다'고 하지 않는다)
+  const closedSeasonal = spots.filter((s) => s.seasonal && !isSeasonOpen(s.seasonal, onDate));
+  const closedEvent = spots.filter((s) => s.contentTypeId === "15" && !isEventRunning(s.eventPeriod, onDate));
+  const dropped = new Set([...closedSeasonal, ...closedEvent]);
+  const pool = spots.filter((s) => !dropped.has(s));
 
-  const w = COMPANION_WEIGHT[companion];
-  const ranked = pool
-    .map((s) => ({
-      s,
-      score:
-        (s.isCore ? 1 : 0.4) +
-        (w[s.theme] ?? 1) +
-        interestBonus(s, interests) +
-        (isPeak(s.peak, refDate) ? PEAK_WEIGHT : 0) + // 제철 가중치(시즌 결합)
-        s.relevance,
-    }))
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.s);
+  const rank = (list: WhaleSpot[]) => {
+    const w = COMPANION_WEIGHT[companion];
+    return list
+      .map((s) => ({
+        s,
+        score:
+          (s.isCore ? 1 : 0.4) +
+          (w[s.theme] ?? 1) +
+          interestBonus(s, interests) +
+          (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) + // 제철 가중치(시즌 결합) — '선별'에 반영
+          s.relevance,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.s);
+  };
+  const ranked = rank(pool);
 
   const days = DAYS[duration];
   const need = Math.min(ranked.length, days * STOPS_PER_DAY);
@@ -172,41 +184,79 @@ export function buildCourse(
       order,
       arrive: fmtTime(cur),
       legKm,
-      isPeak: isPeak(spot.peak, refDate),
-      note: noteFor(spot, companion, refDate),
+      isPeak: isPeak(spot.peak, onDate),
+      note: noteFor(spot, companion, onDate),
     };
   });
 
-  // 시즌 비가용 스팟 → 코스에 실제로 들어간 대체 스팟을 명시(비운항기 대체 안내).
+  // ── 안내 문구는 전부 '실제 코스 상태'에서 파생한다. 단언하지 말고 확인하고 말한다. ──
+  // (과거엔 운항기면 코스에 크루즈가 없어도 "바다 위 코스를 넣었어요", 제철 스팟이 맨 뒤여도
+  //  "앞쪽에 배치했어요", 원래도 들어갈 스팟을 "대신 넣었어요"라고 거짓 안내했다)
+
+  // 시즌 비가용 → '진짜 대체'만 주장한다. 반사실 비교: 그 스팟이 열려 있었다면 짜였을 코스와 견줘,
+  // 그것이 빠진 덕에 새로 들어온 스팟만 대체로 인정한다.
   const substitutions: Substitution[] = [];
+  const inCourse = new Set(routed.map((s) => s.id));
   for (const ex of closedSeasonal) {
-    const subId = SEASON_SUBSTITUTE[ex.id];
-    const sub = subId ? routed.find((s) => s.id === subId) : undefined;
-    if (!sub || !ex.seasonal) continue;
-    const closed = closedRangeLabel(ex.seasonal);
-    substitutions.push({
-      excludedTitle: ex.title,
-      replacedByTitle: sub.title,
-      reason: `${ex.seasonal.label} 휴지기(${closed})`,
-    });
+    if (!ex.seasonal) continue;
+    const reason = unavailableReason(ex.seasonal, onDate); // 휴지기인지, 주말만 운항인지 사유를 그대로
+    const head = `${ex.title}${topicParticle(ex.title)} 이 날짜엔 이용할 수 없어요 (${reason}).`;
+
+    const wouldHave = rank([...pool, ex]).slice(0, Math.min(pool.length + 1, days * STOPS_PER_DAY));
+    const wouldHaveIds = new Set(wouldHave.map((s) => s.id));
+    // 열려 있었어도 애초에 코스에 못 들었다면, 그 스팟 때문에 바뀐 건 없다 → 대체를 주장하지 않는다.
+    const newcomers = wouldHaveIds.has(ex.id)
+      ? ranked.filter((s) => inCourse.has(s.id) && !wouldHaveIds.has(s.id))
+      : [];
+    // 큐레이션 대체(SEASON_SUBSTITUTE)를 우선하되, 그것도 '새로 들어온' 경우에만 인정한다.
+    const sub = newcomers.find((s) => s.id === SEASON_SUBSTITUTE[ex.id]) ?? newcomers[0];
+
+    if (sub) {
+      substitutions.push({ excludedTitle: ex.title, replacedByTitle: sub.title, reason });
+      seasonNotes.push(`${head} 대신 ${sub.title}${objectParticle(sub.title)} 코스에 넣었어요.`);
+    } else {
+      seasonNotes.push(head); // 대신 들어온 게 없으면 대체했다고 말하지 않는다
+    }
+  }
+
+  // 크루즈 운항 안내 — 실제로 코스에 들어갔을 때만 '넣었다'고 한다.
+  if (isSeasonOpen(CRUISE_SEASON, onDate)) {
+    const cruise = routed.find((s) => s.seasonal === CRUISE_SEASON);
+    const season = `${CRUISE_SEASON.label} 시즌이에요 (${openRangeLabel(CRUISE_SEASON)}).`;
     seasonNotes.push(
-      `${ex.title}${topicParticle(ex.title)} ${closed} 휴지기예요. ` +
-        `대신 ${sub.title}${objectParticle(sub.title)} 코스에 넣었어요.`,
+      cruise ? `${season} 바다 위 코스를 추천에 넣었어요.` : `${season} 시간이 되면 함께 둘러보세요.`,
+    );
+  } else if (!closedSeasonal.some((s) => s.seasonal === CRUISE_SEASON)) {
+    // 휴지기인데 크루즈가 스팟 목록에 아예 없던 경우에만 일반 안내(있었다면 위에서 개별 안내됨).
+    seasonNotes.push(CRUISE_SEASON.closedNote);
+  }
+
+  // 기준일에 열리지 않는 축제는 코스에 넣지 않았다는 사실을 알린다(개최기간을 알 때만).
+  for (const ev of closedEvent) {
+    if (!ev.eventPeriod) continue;
+    seasonNotes.push(
+      `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
     );
   }
 
-  // 제철 안내 — 계절마다 추천이 도는 이유를 사용자에게 보여준다.
+  // 제철 안내 — '선별에 우선 반영'이 사실. 순서는 거리 기반이라 앞쪽 배치를 약속하지 않는다.
   const peakLabels = [...new Set(stops.filter((s) => s.isPeak).map((s) => s.spot.peak?.label ?? ""))].filter(Boolean);
-  if (peakLabels.length) seasonNotes.push(`지금은 ${peakLabels.join(", ")} — 제철 스팟을 코스 앞쪽에 배치했어요.`);
+  if (peakLabels.length) seasonNotes.push(`지금은 ${peakLabels.join(", ")} — 제철 스팟을 우선 담았어요.`);
 
   return {
     companion,
     duration,
     interests,
-    refDate: refDate ?? new Date().toISOString().slice(0, 10),
+    refDate: onDate,
     stops,
     distanceKm: totalDistanceKm(routed),
     substitutions,
     seasonNotes,
   };
+}
+
+/** 20250925~20250928 → "2025.09.25~09.28" */
+function fmtEventPeriod(p: EventPeriod): string {
+  const d = (s: string) => `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}`;
+  return p.start === p.end ? d(p.start) : `${d(p.start)}~${d(p.end).slice(5)}`;
 }

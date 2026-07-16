@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSpots } from "@/backend/lib/data";
 import { buildCourse } from "@/backend/lib/recommend";
+import { isValidRefDate } from "@/backend/lib/season";
 import { INTERESTS, type Companion, type Duration, type Interest } from "@/backend/lib/types";
 
 const COMPANIONS: Companion[] = ["family", "couple", "friends", "solo"];
@@ -12,13 +13,22 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const companion = sp.get("companion");
   const duration = sp.get("duration");
-  const date = sp.get("date") ?? undefined;
+  const date = sp.get("date");
 
-  if (companion && !COMPANIONS.includes(companion as Companion)) {
+  // 파라미터가 '있는데 값이 유효하지 않으면' 400 — 빈 문자열도 포함한다.
+  // (과거엔 빈 문자열이 falsy라 검증을 통과한 뒤 ?? 기본값도 비켜가:
+  //  companion= → 가중치 테이블 미스로 500, duration= → 빈 코스 200, date= → refDate "" 응답)
+  if (companion !== null && !COMPANIONS.includes(companion as Companion)) {
     return NextResponse.json({ error: "동행 유형이 올바르지 않아요." }, { status: 400 });
   }
-  if (duration && !DURATIONS.includes(duration as Duration)) {
+  if (duration !== null && !DURATIONS.includes(duration as Duration)) {
     return NextResponse.json({ error: "체류 기간이 올바르지 않아요." }, { status: 400 });
+  }
+  if (date !== null && !isValidRefDate(date)) {
+    return NextResponse.json(
+      { error: "기준 날짜는 YYYY-MM-DD 형식의 실제 날짜여야 해요." },
+      { status: 400 },
+    );
   }
 
   // 관심사 — 유효한 값만 통과(잘못된 값은 무시).
@@ -30,10 +40,10 @@ export async function GET(req: NextRequest) {
   const spots = await getSpots();
   const course = buildCourse(
     spots,
-    (companion as Companion) ?? "family",
-    (duration as Duration) ?? "day",
+    (companion as Companion | null) ?? "family",
+    (duration as Duration | null) ?? "day",
     interests,
-    date,
+    date ?? undefined,
   );
   return NextResponse.json({ source: "공공데이터", course });
 }

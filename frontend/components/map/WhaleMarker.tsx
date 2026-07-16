@@ -11,6 +11,7 @@ export function WhaleMarker({
   spot,
   selected,
   onSelect,
+  hitR,
 }: {
   x: number;
   y: number;
@@ -18,17 +19,21 @@ export function WhaleMarker({
   spot: WhaleSpot;
   selected: boolean;
   onSelect: () => void;
+  /** 보이지 않는 탭 영역 반지름(viewBox 단위). 좁은 화면에서 도장이 작아져도 손가락이 닿게 한다. */
+  hitR?: number;
 }) {
   const color = themeColor(spot.theme);
   const r = spot.isCore ? 17 : 13;
   const glyphScale = (r * 1.35) / 220;
   const labelW = spot.title.length * 12.5 + 16;
+  const tapR = Math.max(hitR ?? 0, r + 4);
 
   return (
     <g transform={`translate(${x} ${y}) scale(${1 / k})`}>
       <g
         role="button"
         tabIndex={0}
+        data-spot-id={spot.id}
         aria-label={`${spot.title} 상세 보기`}
         aria-pressed={selected}
         className="cursor-pointer outline-none"
@@ -43,6 +48,10 @@ export function WhaleMarker({
           }
         }}
       >
+        {/* 탭 영역 — 좁은 화면에선 여지도 전체가 축소돼 도장이 10px 아래로 줄어든다.
+            보이는 크기는 그대로 두고, 닿는 영역만 손가락 크기(WCAG 2.5.8 최소 24px)로 넓힌다. */}
+        <circle r={tapR} fill="transparent" stroke="none" />
+
         <ellipse cx={0} cy={r + 3} rx={r * 0.8} ry={3} fill="var(--color-ink)" opacity={0.18} />
 
         {selected && <circle r={r + 9} fill="none" stroke="var(--color-seal)" strokeWidth={2.2} opacity={0.9} />}

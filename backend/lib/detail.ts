@@ -1,6 +1,6 @@
 import type { WhaleSpot } from "./types";
 import { getSpot } from "./data";
-import { attachSeasonRules } from "./adapter";
+import { attachSeasonRules, eventPeriodOf } from "./adapter";
 import { detailCommon, detailImages, detailIntro } from "./tourapi";
 import { cached } from "./cache";
 import { sanitize } from "./sanitize";
@@ -20,16 +20,22 @@ const INTRO_FIELDS = {
   tel: ["infocenter", "infocenterculture", "infocenterfood", "infocenterleports", "infocenterlodging", "infocentershopping"],
 };
 
-// 축제 행사기간(eventstartdate~eventenddate, YYYYMMDD) → 운영시간 대체 표시.
+// 축제 행사기간(eventstartdate~eventenddate) → 운영시간 자리에 함께 표시.
+// 축제는 '몇 시에 여는가'보다 '언제 하는가'가 먼저다.
 function festivalPeriod(intro: Record<string, unknown> | null): string | undefined {
-  if (!intro) return undefined;
-  const fmt = (s: unknown) => {
-    const v = String(s ?? "");
-    return /^\d{8}$/.test(v) ? `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}` : "";
-  };
-  const sd = fmt(intro.eventstartdate);
-  const ed = fmt(intro.eventenddate);
-  return sd ? `행사기간 ${sd}${ed ? ` ~ ${ed}` : ""}` : undefined;
+  const p = eventPeriodOf(intro);
+  if (!p) return undefined;
+  const fmt = (v: string) => `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}`;
+  return `행사기간 ${fmt(p.start)}${p.end !== p.start ? ` ~ ${fmt(p.end)}` : ""}`;
+}
+
+/**
+ * 축제(15)의 운영시간 표기 — 행사기간을 앞에 두고 진행시간(playtime)을 뒤에 붙인다.
+ * (과거엔 useTime 후보에 playtime이 먼저 걸려 festivalPeriod가 영영 호출되지 않는 죽은 코드였고,
+ *  사용자는 축제가 '언제 열리는지'를 상세에서 전혀 볼 수 없었다)
+ */
+function festivalUseTime(intro: Record<string, unknown> | null): string | undefined {
+  return [festivalPeriod(intro), pick(intro, ["playtime"])].filter(Boolean).join(" · ") || undefined;
 }
 
 // HTML 제거 + 공사 표기 sanitize.
@@ -102,7 +108,10 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
       image: firstImg,
       images: gallery,
       detail: {
-        useTime: pick(intro, INTRO_FIELDS.useTime) ?? festivalPeriod(intro),
+        useTime:
+          base.contentTypeId === "15"
+            ? festivalUseTime(intro)
+            : pick(intro, INTRO_FIELDS.useTime),
         restDate: pick(intro, INTRO_FIELDS.restDate),
         useFee: pick(intro, INTRO_FIELDS.useFee),
       },
