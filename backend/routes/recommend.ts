@@ -3,6 +3,7 @@ import { getSpots } from "@/backend/lib/data";
 import { buildCourse } from "@/backend/lib/recommend";
 import { isValidRefDate, resolveRefDate } from "@/backend/lib/season";
 import { cached } from "@/backend/lib/cache";
+import { localizeSpot, resolveLang, sourceLabel } from "@/backend/lib/i18n";
 import { INTERESTS, type Companion, type Duration, type Interest } from "@/backend/lib/types";
 
 const COMPANIONS: Companion[] = ["family", "couple", "friends", "solo"];
@@ -45,14 +46,19 @@ export async function GET(req: NextRequest) {
 
   const comp = (companion as Companion | null) ?? "family";
   const dur = (duration as Duration | null) ?? "day";
+  const lang = resolveLang(sp.get("lang"));
   const effDate = resolveRefDate(date ?? undefined); // 없으면 오늘 — 키에 실제 날짜를 박아 자정 넘어가도 안전
 
   // 재현성·캐싱 (W7): 같은 입력이면 같은 코스. 'spots' 태그로 묶어 재수집·퍼지 때 함께 무효화.
   const course = await cached(
-    `course:${comp}:${dur}:${interests.join("+")}:${effDate}`,
+    `course:${comp}:${dur}:${interests.join("+")}:${effDate}:${lang}`,
     COURSE_TTL_MS,
-    async () => buildCourse(await getSpots(), comp, dur, interests, effDate),
+    async () => {
+      // 코스 안내 문구가 스팟 이름을 인용하므로, 지역화된 스팟으로 코스를 짠다.
+      const spots = (await getSpots()).map((s) => localizeSpot(s, lang));
+      return buildCourse(spots, comp, dur, interests, effDate, lang);
+    },
     { tags: ["spots"] },
   );
-  return NextResponse.json({ source: "공공데이터", course });
+  return NextResponse.json({ source: sourceLabel(lang), course });
 }

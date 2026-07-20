@@ -1,4 +1,5 @@
 import type { EventPeriod, PeakSeason, SeasonRule } from "./types";
+import { type Lang, monthRangeLabel } from "./i18n";
 
 /**
  * 고래바다여행선: 국내 유일 고래 관찰 크루즈.
@@ -68,12 +69,18 @@ export function isSeasonOpen(rule: SeasonRule, refDate?: string): boolean {
  * 지금 이용할 수 없는 '사유'. 안내 문구가 실제 사유를 반영해야 한다 —
  * 11월 평일(주말 한정 운항)에 "12~3월 휴지기"라고 하면 틀린 말이 된다.
  */
-export function unavailableReason(rule: SeasonRule, refDate?: string): string {
+export function unavailableReason(rule: SeasonRule, refDate?: string, lang: Lang = "ko"): string {
   const m = monthOf(refDate);
-  if (!rule.openMonths.includes(m)) return `${closedRangeLabel(rule)} 휴지기`;
-  if (rule === CRUISE_SEASON && CRUISE_WEEKEND_ONLY_MONTHS.includes(m)) return `${m}월은 주말(토·일)만 운항`;
-  return "이 날짜엔 이용 불가";
+  const closedMonths = Array.from({ length: 12 }, (_, i) => i + 1).filter((mm) => !rule.openMonths.includes(mm));
+  if (!rule.openMonths.includes(m)) {
+    return lang === "en" ? `off-season, ${monthRangeLabel(closedMonths, "en")}` : `${closedRangeLabel(rule)} 휴지기`;
+  }
+  if (rule === CRUISE_SEASON && CRUISE_WEEKEND_ONLY_MONTHS.includes(m)) {
+    return lang === "en" ? `${MONTHS_EN_FULL[m]} — weekends only` : `${m}월은 주말(토·일)만 운항`;
+  }
+  return lang === "en" ? "not available on this date" : "이 날짜엔 이용 불가";
 }
+const MONTHS_EN_FULL = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 /** 축제가 기준 날짜에 실제로 열리는가. 기간을 모르면 false — 모르는 걸 '열린다'고 하지 않는다. */
 export function isEventRunning(period: EventPeriod | undefined, refDate?: string): boolean {

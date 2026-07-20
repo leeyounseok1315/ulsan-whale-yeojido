@@ -20,6 +20,7 @@ import {
   unavailableReason,
 } from "./season";
 import { closedByArrival, isClosedOn, openHoursLabel, weekdayKr } from "./operating";
+import { type Lang, monthRangeLabel, weekdayName } from "./i18n";
 
 // 코스 추천 엔진 — 규칙 기반 (과설계 금지).
 // 입력: 동행 유형 + 체류 기간 + 관심사 + 기준 날짜(시즌 외부 주입). 출력: 일자·시간 코스.
@@ -67,7 +68,30 @@ function hasFinalConsonant(word: string): boolean {
 const topicParticle = (w: string) => (hasFinalConsonant(w) ? "은" : "는");
 const objectParticle = (w: string) => (hasFinalConsonant(w) ? "을" : "를");
 
-function baseNoteFor(spot: WhaleSpot, companion: Companion): string {
+// 제철 라벨(국문) → 영문. 큐레이션 매핑, 없으면 국문 그대로.
+const PEAK_LABEL_EN: Record<string, string> = {
+  "고래 관찰 성수기": "Peak whale-watching season",
+  "갈수기 관찰 적기": "Best viewing (low-water season)",
+  "억새 절정": "Silver-grass at its peak",
+  "정원·야경 좋은 때": "Great for gardens & night views",
+  "축제 기간": "Festival season",
+};
+const peakLabelL = (label: string, lang: Lang) => (lang === "en" ? PEAK_LABEL_EN[label] ?? label : label);
+
+function baseNoteFor(spot: WhaleSpot, companion: Companion, lang: Lang): string {
+  if (lang === "en") {
+    if (spot.seasonal) return "See through the whale's eyes at sea — check the sailing times in advance.";
+    switch (spot.theme) {
+      case "culture":
+        return companion === "family" ? "Whale stories to enjoy slowly with the kids." : "Walk through the history of whaling.";
+      case "heritage":
+        return "Come face to face with a prehistoric record of whale hunting.";
+      case "nature":
+        return companion === "couple" ? "Lovely for a walk around sunset." : "A pause in nature within the city.";
+      default:
+        return "A scene from the whale city.";
+    }
+  }
   if (spot.seasonal) return "바다 위에서 고래의 시선으로 — 운항 시간을 미리 확인하세요.";
   switch (spot.theme) {
     case "culture":
@@ -82,9 +106,9 @@ function baseNoteFor(spot: WhaleSpot, companion: Companion): string {
 }
 
 /** 제철이면 안내 문구 앞에 제철 라벨을 붙인다. */
-function noteFor(spot: WhaleSpot, companion: Companion, refDate?: string): string {
-  const base = baseNoteFor(spot, companion);
-  return spot.peak && isPeak(spot.peak, refDate) ? `${spot.peak.label} — ${base}` : base;
+function noteFor(spot: WhaleSpot, companion: Companion, refDate: string, lang: Lang): string {
+  const base = baseNoteFor(spot, companion, lang);
+  return spot.peak && isPeak(spot.peak, refDate) ? `${peakLabelL(spot.peak.label, lang)} — ${base}` : base;
 }
 
 function haversineKm(a: WhaleSpot, b: WhaleSpot): number {
@@ -131,7 +155,9 @@ export function buildCourse(
   duration: Duration,
   interests: Interest[] = [],
   refDate?: string,
+  lang: Lang = "ko",
 ): Course {
+  const en = lang === "en";
   const onDate = resolveRefDate(refDate); // 없거나 형식이 틀리면 오늘 — 엔진 내부는 항상 유효 날짜
   const seasonNotes: string[] = [];
 
@@ -190,8 +216,8 @@ export function buildCourse(
       arrive: fmtTime(cur),
       legKm,
       isPeak: isPeak(spot.peak, onDate),
-      openHours: openHoursLabel(spot.opening),
-      note: noteFor(spot, companion, onDate),
+      openHours: openHoursLabel(spot.opening, lang),
+      note: noteFor(spot, companion, onDate, lang),
     };
   });
 
@@ -205,8 +231,10 @@ export function buildCourse(
   const inCourse = new Set(routed.map((s) => s.id));
   for (const ex of closedSeasonal) {
     if (!ex.seasonal) continue;
-    const reason = unavailableReason(ex.seasonal, onDate); // 휴지기인지, 주말만 운항인지 사유를 그대로
-    const head = `${ex.title}${topicParticle(ex.title)} 이 날짜엔 이용할 수 없어요 (${reason}).`;
+    const reason = unavailableReason(ex.seasonal, onDate, lang); // 휴지기인지, 주말만 운항인지 사유를 그대로
+    const head = en
+      ? `${ex.title} isn't available on this date (${reason}).`
+      : `${ex.title}${topicParticle(ex.title)} 이 날짜엔 이용할 수 없어요 (${reason}).`;
 
     const wouldHave = rank([...pool, ex]).slice(0, Math.min(pool.length + 1, days * STOPS_PER_DAY));
     const wouldHaveIds = new Set(wouldHave.map((s) => s.id));
@@ -219,7 +247,9 @@ export function buildCourse(
 
     if (sub) {
       substitutions.push({ excludedTitle: ex.title, replacedByTitle: sub.title, reason });
-      seasonNotes.push(`${head} 대신 ${sub.title}${objectParticle(sub.title)} 코스에 넣었어요.`);
+      seasonNotes.push(
+        en ? `${head} Added ${sub.title} instead.` : `${head} 대신 ${sub.title}${objectParticle(sub.title)} 코스에 넣었어요.`,
+      );
     } else {
       seasonNotes.push(head); // 대신 들어온 게 없으면 대체했다고 말하지 않는다
     }
@@ -228,42 +258,66 @@ export function buildCourse(
   // 크루즈 운항 안내 — 실제로 코스에 들어갔을 때만 '넣었다'고 한다.
   if (isSeasonOpen(CRUISE_SEASON, onDate)) {
     const cruise = routed.find((s) => s.seasonal === CRUISE_SEASON);
-    const season = `${CRUISE_SEASON.label} 시즌이에요 (${openRangeLabel(CRUISE_SEASON)}).`;
-    seasonNotes.push(
-      cruise ? `${season} 바다 위 코스를 추천에 넣었어요.` : `${season} 시간이 되면 함께 둘러보세요.`,
-    );
+    if (en) {
+      const season = `The whale-watching cruise runs this season (${monthRangeLabel(CRUISE_SEASON.openMonths, "en")}).`;
+      seasonNotes.push(cruise ? `${season} We added the sea route to your course.` : `${season} Fit it in if you have time.`);
+    } else {
+      const season = `${CRUISE_SEASON.label} 시즌이에요 (${openRangeLabel(CRUISE_SEASON)}).`;
+      seasonNotes.push(cruise ? `${season} 바다 위 코스를 추천에 넣었어요.` : `${season} 시간이 되면 함께 둘러보세요.`);
+    }
   } else if (!closedSeasonal.some((s) => s.seasonal === CRUISE_SEASON)) {
     // 휴지기인데 크루즈가 스팟 목록에 아예 없던 경우에만 일반 안내(있었다면 위에서 개별 안내됨).
-    seasonNotes.push(CRUISE_SEASON.closedNote);
+    seasonNotes.push(
+      en
+        ? `The whale-watching cruise runs only ${monthRangeLabel(CRUISE_SEASON.openMonths, "en")}; off-season, we guide you to Jangsaengpo spots open year-round.`
+        : CRUISE_SEASON.closedNote,
+    );
   }
 
   // 기준일에 열리지 않는 축제는 코스에 넣지 않았다는 사실을 알린다(개최기간을 알 때만).
   for (const ev of closedEvent) {
     if (!ev.eventPeriod) continue;
     seasonNotes.push(
-      `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
+      en
+        ? `${ev.title} isn't running on this date, so we left it out (last held ${fmtEventPeriod(ev.eventPeriod)}).`
+        : `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
     );
   }
 
   // 정기 휴무로 뺀 곳 안내 (W7) — 한 줄로 묶는다. 대부분 같은 요일(기준일) 휴무라 한 문장이면 충분.
   if (closedByRest.length) {
     const names = closedByRest.map((s) => s.title);
-    const head = names.slice(0, 2).join(", ") + (names.length > 2 ? ` 외 ${names.length - 2}곳` : "");
-    seasonNotes.push(`${weekdayKr(onDate)}요일에 문 닫는 곳은 빼고 코스를 짰어요 (${head}).`);
+    if (en) {
+      const head = names.slice(0, 2).join(", ") + (names.length > 2 ? ` and ${names.length - 2} more` : "");
+      seasonNotes.push(`We left out places closed on ${weekdayName(dayIndex(onDate), "en")} (${head}).`);
+    } else {
+      const head = names.slice(0, 2).join(", ") + (names.length > 2 ? ` 외 ${names.length - 2}곳` : "");
+      seasonNotes.push(`${weekdayKr(onDate)}요일에 문 닫는 곳은 빼고 코스를 짰어요 (${head}).`);
+    }
   }
 
   // 운영시간 안내 (W7) — 도착 예정 시각에 이미 마감하는 스팟이 있으면 알린다(마감시각을 아는 경우만).
   for (const st of stops) {
     if (closedByArrival(st.spot.opening, st.arrive)) {
       seasonNotes.push(
-        `${st.spot.title}${topicParticle(st.spot.title)} 도착 예정 ${st.arrive}엔 이미 문을 닫아요 (운영 ${st.openHours}). 순서를 앞당기는 걸 권해요.`,
+        en
+          ? `${st.spot.title} is already closed by your arrival at ${st.arrive} (open ${st.openHours}). Consider visiting it earlier.`
+          : `${st.spot.title}${topicParticle(st.spot.title)} 도착 예정 ${st.arrive}엔 이미 문을 닫아요 (운영 ${st.openHours}). 순서를 앞당기는 걸 권해요.`,
       );
     }
   }
 
   // 제철 안내 — '선별에 우선 반영'이 사실. 순서는 거리 기반이라 앞쪽 배치를 약속하지 않는다.
-  const peakLabels = [...new Set(stops.filter((s) => s.isPeak).map((s) => s.spot.peak?.label ?? ""))].filter(Boolean);
-  if (peakLabels.length) seasonNotes.push(`지금은 ${peakLabels.join(", ")} — 제철 스팟을 우선 담았어요.`);
+  const peakLabels = [
+    ...new Set(stops.filter((s) => s.isPeak).map((s) => (s.spot.peak ? peakLabelL(s.spot.peak.label, lang) : ""))),
+  ].filter(Boolean);
+  if (peakLabels.length) {
+    seasonNotes.push(
+      en
+        ? `Right now: ${peakLabels.join(", ")} — we prioritised in-season spots.`
+        : `지금은 ${peakLabels.join(", ")} — 제철 스팟을 우선 담았어요.`,
+    );
+  }
 
   return {
     companion,
@@ -282,3 +336,6 @@ function fmtEventPeriod(p: EventPeriod): string {
   const d = (s: string) => `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}`;
   return p.start === p.end ? d(p.start) : `${d(p.start)}~${d(p.end).slice(5)}`;
 }
+
+/** 기준 날짜의 요일 인덱스(0=일). weekdayName(i18n)에 넘길 값. */
+const dayIndex = (refDate: string) => new Date(`${refDate}T00:00:00`).getDay();

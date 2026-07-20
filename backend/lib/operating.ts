@@ -1,4 +1,5 @@
 import type { OpeningInfo } from "./types";
+import type { Lang } from "./i18n";
 import { resolveRefDate } from "./season";
 
 // 운영정보 파서 — 자유 텍스트인 detailIntro2의 운영시간(useTime)·휴무(restDate)를
@@ -61,9 +62,9 @@ export function isClosedOn(op: OpeningInfo | undefined, refDate?: string): boole
 }
 
 /** 상세·코스에 보여줄 운영시간 라벨. */
-export function openHoursLabel(op: OpeningInfo | undefined): string | undefined {
+export function openHoursLabel(op: OpeningInfo | undefined, lang: Lang = "ko"): string | undefined {
   if (!op) return undefined;
-  if (op.alwaysOpenHours) return "상시 개방";
+  if (op.alwaysOpenHours) return lang === "en" ? "Open daily" : "상시 개방";
   return op.open && op.close ? `${op.open}~${op.close}` : undefined;
 }
 
