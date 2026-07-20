@@ -5,20 +5,12 @@ import { detailCommon, detailImages, detailIntro } from "./tourapi";
 import { cached } from "./cache";
 import { sanitize } from "./sanitize";
 import { isMockMode } from "./collect";
+import { INTRO_FIELDS, clean, pick } from "./introFields";
 
 // detail* 통합 상세 조회 — base 스팟 + detailIntro2(운영시간·휴무·요금) + detailImage2(갤러리)
 // + 필요 시 detailCommon2(overview). 스팟별 캐싱. (PLAN.md W3: detailCommon2/Intro2/Image2 통합)
 
 const TTL_MS = 1000 * 60 * 60; // 1시간
-
-// detailIntro2는 콘텐츠타입마다 필드명이 다르다(실측 기반 후보군).
-const INTRO_FIELDS = {
-  // 주의: 축제(15)의 usetimefestival은 '운영시간'이 아니라 '이용요금'이라 useFee로 분류. 축제 시간은 행사기간으로.
-  useTime: ["usetime", "usetimeculture", "usetimeleports", "opentimefood", "opentime", "playtime", "checkintime"],
-  restDate: ["restdate", "restdateculture", "restdateleports", "restdatefood", "restdateshopping"],
-  useFee: ["usefee", "usefeeleports", "usetimefestival"],
-  tel: ["infocenter", "infocenterculture", "infocenterfood", "infocenterleports", "infocenterlodging", "infocentershopping"],
-};
 
 // 축제 행사기간(eventstartdate~eventenddate) → 운영시간 자리에 함께 표시.
 // 축제는 '몇 시에 여는가'보다 '언제 하는가'가 먼저다.
@@ -36,27 +28,6 @@ function festivalPeriod(intro: Record<string, unknown> | null): string | undefin
  */
 function festivalUseTime(intro: Record<string, unknown> | null): string | undefined {
   return [festivalPeriod(intro), pick(intro, ["playtime"])].filter(Boolean).join(" · ") || undefined;
-}
-
-// HTML 제거 + 공사 표기 sanitize.
-function clean(s?: string | null): string | undefined {
-  if (!s) return undefined;
-  const t = String(s)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-  return sanitize(t) || undefined;
-}
-
-function pick(item: Record<string, unknown> | null, fields: string[]): string | undefined {
-  if (!item) return undefined;
-  for (const f of fields) {
-    const v = item[f];
-    if (v && String(v).trim()) return clean(String(v));
-  }
-  return undefined;
 }
 
 // 자체 이미지가 없는 스팟 → 대표(소속) 스팟의 실사진으로 보강.

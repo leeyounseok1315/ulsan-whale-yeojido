@@ -1,6 +1,8 @@
 import type { RawTourItem, WhaleSpot } from "./types";
 import { attachSeasonRules, eventPeriodOf, toWhaleSpot } from "./adapter";
 import { detailIntro } from "./tourapi";
+import { extractIntro } from "./introFields";
+import { parseOpening } from "./operating";
 import { cached, setCache } from "./cache";
 import { collectAndNormalize, collectFast, isMockMode } from "./collect";
 import { recordBatch } from "./metrics";
@@ -39,35 +41,53 @@ function assertComplete(spots: WhaleSpot[], missing: string[] = []): WhaleSpot[]
   return spots;
 }
 
-/**
- * 축제(15)에 개최기간을 붙인다. 이 값은 detailIntro2에만 있어서(수집 응답엔 없음) 별도 조회가 필요하다.
- * 고래 테마로 걸러진 뒤의 축제만 대상이라 보통 1건 — 콜드 경로 비용은 호출 1회 수준.
- * 기간을 모르면 붙이지 않는다: 추천 엔진은 '기간을 모르는 축제'를 코스에 넣지 않는다.
- */
-async function withEventPeriods(spots: WhaleSpot[]): Promise<WhaleSpot[]> {
-  if (isMockMode()) return spots;
-  const festivals = spots.filter((s) => s.contentTypeId === "15");
-  if (!festivals.length) return spots;
+const INTRO_CONCURRENCY = 3; // data.go.kr 동시요청 제한 안에서 (collectFast와 동일 근거)
+const INTRO_CALL = { timeoutMs: 4000, maxTries: 2 }; // 운영정보는 보강값 — 요청 경로를 오래 잡지 않는다
 
-  const periods = new Map<string, ReturnType<typeof eventPeriodOf>>();
-  for (const f of festivals) {
-    try {
-      periods.set(f.id, eventPeriodOf(await detailIntro(f.id, f.contentTypeId)));
-    } catch (e) {
-      console.warn(`[data] 축제 ${f.id} 개최기간 조회 실패:`, e instanceof Error ? e.message : e);
-    }
+/**
+ * 운영정보 사전 부착 (W7) — 스팟마다 detailIntro2를 1회 조회해
+ *  · 축제(15) 개최기간(eventstartdate/enddate)
+ *  · 운영시간·휴무(useTime/restDate) → OpeningInfo
+ * 를 붙인다. 이 값들은 수집 응답엔 없고 detailIntro2에만 있어(실측) 별도 조회가 필요하다.
+ * 추천 엔진이 '문 닫은 곳'을 코스에서 빼려면 요청 시점이 아니라 수집(캐시) 단계에 미리 부착돼야 한다.
+ * 개별 intro 실패는 관용한다 — 운영정보는 보강값이라, 없으면 그 스팟은 '규칙 모름 = 여는 것으로' 다룬다.
+ */
+async function withOperatingInfo(spots: WhaleSpot[]): Promise<WhaleSpot[]> {
+  if (isMockMode()) {
+    // mock 픽스처는 useTime/restDate를 이미 detail에 포함 — 그걸로 운영정보 파싱.
+    return spots.map((s) => attachSeasonRules({ ...s, opening: parseOpening(s.detail?.useTime, s.detail?.restDate) }));
   }
-  // eventPeriod가 생기면 제철(peak)도 그에 맞춰 다시 파생돼야 하므로 attachSeasonRules를 다시 태운다.
+
+  const intros = new Map<string, Record<string, unknown> | null>();
+  const queue = [...spots];
+  const worker = async () => {
+    for (let s = queue.shift(); s; s = queue.shift()) {
+      try {
+        intros.set(s.id, await detailIntro(s.id, s.contentTypeId, INTRO_CALL));
+      } catch (e) {
+        console.warn(`[data] ${s.id} 운영정보(detailIntro) 실패:`, e instanceof Error ? e.message : e);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: INTRO_CONCURRENCY }, worker));
+
+  // eventPeriod·opening이 생기면 제철(peak)도 다시 파생돼야 하므로 attachSeasonRules를 다시 태운다.
   return spots.map((s) => {
-    const p = periods.get(s.id);
-    return p ? attachSeasonRules({ ...s, eventPeriod: p }) : s;
+    const intro = intros.get(s.id) ?? null;
+    const ex = extractIntro(intro);
+    return attachSeasonRules({
+      ...s,
+      eventPeriod: s.contentTypeId === "15" ? eventPeriodOf(intro) : undefined,
+      opening: parseOpening(ex.useTime, ex.restDate),
+      detail: { useTime: ex.useTime, restDate: ex.restDate, useFee: ex.useFee },
+    });
   });
 }
 
 // 읽기 경로: 빠른 수집(동시성 3). 동시 요청 중복 제거·SWR은 cache 레이어가 담당.
 async function produceFast(): Promise<WhaleSpot[]> {
   const { items, missing } = await collectFast();
-  return withEventPeriods(assertComplete(buildSpots(items), missing));
+  return withOperatingInfo(assertComplete(buildSpots(items), missing));
 }
 export async function getSpots(): Promise<WhaleSpot[]> {
   // 시즌 규칙은 캐시된 payload가 아닌 현재 코드 기준으로 다시 부착 — 규칙·문구 수정이 즉시 반영된다.
@@ -84,7 +104,7 @@ export async function refreshSpots() {
   try {
     const { items, stats } = await collectAndNormalize();
     // 0건이면 캐시·스냅샷을 덮어쓰지 않는다 — 배치가 빈 데이터로 정상본을 파괴하면 복구가 어렵다.
-    const spots = await withEventPeriods(assertComplete(buildSpots(items)));
+    const spots = await withOperatingInfo(assertComplete(buildSpots(items)));
     await setCache(CACHE_KEY, TTL_MS, spots, { tags: [CACHE_TAG] });
     recordBatch(true, spots.length);
     return { ok: true as const, count: spots.length, normalize: stats, durationMs: Date.now() - start };

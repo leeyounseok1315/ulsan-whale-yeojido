@@ -105,8 +105,12 @@ export async function detailCommon(contentId: string, opts?: CallOpts): Promise<
 }
 
 // detailIntro2: 콘텐츠타입별 운영시간·휴무·요금 등(필드명이 타입마다 다름 — 호출부에서 매핑).
-export async function detailIntro(contentId: string, contentTypeId: string): Promise<Record<string, unknown> | null> {
-  const { items } = await callBody("detailIntro2", { contentId, contentTypeId }, false);
+export async function detailIntro(
+  contentId: string,
+  contentTypeId: string,
+  opts?: CallOpts,
+): Promise<Record<string, unknown> | null> {
+  const { items } = await callBody("detailIntro2", { contentId, contentTypeId }, false, opts);
   return (items[0] as unknown as Record<string, unknown>) ?? null;
 }
 

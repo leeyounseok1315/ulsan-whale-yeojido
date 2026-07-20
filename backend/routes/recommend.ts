@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSpots } from "@/backend/lib/data";
 import { buildCourse } from "@/backend/lib/recommend";
-import { isValidRefDate } from "@/backend/lib/season";
+import { isValidRefDate, resolveRefDate } from "@/backend/lib/season";
+import { cached } from "@/backend/lib/cache";
 import { INTERESTS, type Companion, type Duration, type Interest } from "@/backend/lib/types";
 
 const COMPANIONS: Companion[] = ["family", "couple", "friends", "solo"];
 const DURATIONS: Duration[] = ["day", "1n2d", "2n3d"];
+const COURSE_TTL_MS = 1000 * 60 * 10; // 10분 — 스팟 캐시와 함께 'spots' 태그로 퍼지
 
 // GET /api/recommend?companion=family&duration=1n2d&interests=history,food&date=2026-01-15
 // date(기준 날짜)는 시즌 외부 주입 — 비운항기 검증(시간 모킹)에 사용. interests는 콤마 구분.
@@ -31,19 +33,26 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 관심사 — 유효한 값만 통과(잘못된 값은 무시).
-  const interests = (sp.get("interests") ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((i): i is Interest => INTERESTS.includes(i as Interest));
+  // 관심사 — 유효한 값만 통과(잘못된 값은 무시). 정렬해 캐시 키 순서 의존성을 없앤다.
+  const interests = [
+    ...new Set(
+      (sp.get("interests") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((i): i is Interest => INTERESTS.includes(i as Interest)),
+    ),
+  ].sort();
 
-  const spots = await getSpots();
-  const course = buildCourse(
-    spots,
-    (companion as Companion | null) ?? "family",
-    (duration as Duration | null) ?? "day",
-    interests,
-    date ?? undefined,
+  const comp = (companion as Companion | null) ?? "family";
+  const dur = (duration as Duration | null) ?? "day";
+  const effDate = resolveRefDate(date ?? undefined); // 없으면 오늘 — 키에 실제 날짜를 박아 자정 넘어가도 안전
+
+  // 재현성·캐싱 (W7): 같은 입력이면 같은 코스. 'spots' 태그로 묶어 재수집·퍼지 때 함께 무효화.
+  const course = await cached(
+    `course:${comp}:${dur}:${interests.join("+")}:${effDate}`,
+    COURSE_TTL_MS,
+    async () => buildCourse(await getSpots(), comp, dur, interests, effDate),
+    { tags: ["spots"] },
   );
   return NextResponse.json({ source: "공공데이터", course });
 }

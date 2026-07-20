@@ -19,6 +19,7 @@ import {
   SEASON_SUBSTITUTE,
   unavailableReason,
 } from "./season";
+import { closedByArrival, isClosedOn, openHoursLabel, weekdayKr } from "./operating";
 
 // 코스 추천 엔진 — 규칙 기반 (과설계 금지).
 // 입력: 동행 유형 + 체류 기간 + 관심사 + 기준 날짜(시즌 외부 주입). 출력: 일자·시간 코스.
@@ -134,12 +135,16 @@ export function buildCourse(
   const onDate = resolveRefDate(refDate); // 없거나 형식이 틀리면 오늘 — 엔진 내부는 항상 유효 날짜
   const seasonNotes: string[] = [];
 
-  // 코스에서 빠지는 스팟 두 종류:
+  // 코스에서 빠지는 스팟 세 종류:
   //  ① 가용성 휴지기(고래바다여행선 비운항 등) — id가 아닌 seasonal 기준(mock/live 공통)
   //  ② 기준일에 열리지 않는 축제 — 개최기간을 모르면 넣지 않는다(모르는 걸 '열린다'고 하지 않는다)
+  //  ③ 기준일이 정기 휴무인 스팟 (W7) — 월요일 휴관 등. 닫은 곳으로 안내하지 않는다.
   const closedSeasonal = spots.filter((s) => s.seasonal && !isSeasonOpen(s.seasonal, onDate));
   const closedEvent = spots.filter((s) => s.contentTypeId === "15" && !isEventRunning(s.eventPeriod, onDate));
-  const dropped = new Set([...closedSeasonal, ...closedEvent]);
+  const closedByRest = spots.filter(
+    (s) => !closedSeasonal.includes(s) && !closedEvent.includes(s) && isClosedOn(s.opening, onDate),
+  );
+  const dropped = new Set([...closedSeasonal, ...closedEvent, ...closedByRest]);
   const pool = spots.filter((s) => !dropped.has(s));
 
   const rank = (list: WhaleSpot[]) => {
@@ -185,6 +190,7 @@ export function buildCourse(
       arrive: fmtTime(cur),
       legKm,
       isPeak: isPeak(spot.peak, onDate),
+      openHours: openHoursLabel(spot.opening),
       note: noteFor(spot, companion, onDate),
     };
   });
@@ -237,6 +243,22 @@ export function buildCourse(
     seasonNotes.push(
       `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
     );
+  }
+
+  // 정기 휴무로 뺀 곳 안내 (W7) — 한 줄로 묶는다. 대부분 같은 요일(기준일) 휴무라 한 문장이면 충분.
+  if (closedByRest.length) {
+    const names = closedByRest.map((s) => s.title);
+    const head = names.slice(0, 2).join(", ") + (names.length > 2 ? ` 외 ${names.length - 2}곳` : "");
+    seasonNotes.push(`${weekdayKr(onDate)}요일에 문 닫는 곳은 빼고 코스를 짰어요 (${head}).`);
+  }
+
+  // 운영시간 안내 (W7) — 도착 예정 시각에 이미 마감하는 스팟이 있으면 알린다(마감시각을 아는 경우만).
+  for (const st of stops) {
+    if (closedByArrival(st.spot.opening, st.arrive)) {
+      seasonNotes.push(
+        `${st.spot.title}${topicParticle(st.spot.title)} 도착 예정 ${st.arrive}엔 이미 문을 닫아요 (운영 ${st.openHours}). 순서를 앞당기는 걸 권해요.`,
+      );
+    }
   }
 
   // 제철 안내 — '선별에 우선 반영'이 사실. 순서는 거리 기반이라 앞쪽 배치를 약속하지 않는다.

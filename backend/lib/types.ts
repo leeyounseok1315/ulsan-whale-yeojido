@@ -62,6 +62,7 @@ export interface WhaleSpot {
   seasonal?: SeasonRule; // 가용성 시즌(고래바다여행선 운항 등) — 휴지기엔 코스에서 제외
   peak?: PeakSeason; // 제철 — 해당 시기에 추천 가중치·배지
   eventPeriod?: EventPeriod; // 축제(15)만 — 개최기간. 기간 밖이면 코스에 편성하지 않는다.
+  opening?: OpeningInfo; // 운영시간·휴무 (W7) — 정기 휴무일엔 코스에서 제외
   detail?: SpotDetail;
   images?: string[]; // 상세 갤러리(detailImage2) — 상세 조회 시에만 채움
 }
@@ -126,6 +127,19 @@ export interface Substitution {
   reason: string; // 예: "고래바다여행선 운항 휴지기(11~3월)"
 }
 
+/**
+ * 운영정보 — detailIntro2의 자유텍스트(운영시간·휴무)를 구조화한 값. (W7)
+ * 수집 단계에서 1회 파싱해 스팟에 굽고, 추천 엔진이 '닫은 곳'을 코스에서 빼는 데 쓴다.
+ */
+export interface OpeningInfo {
+  open?: string; // "09:00"
+  close?: string; // "18:00"
+  alwaysOpenHours: boolean; // 상시 개방(고정 운영시간 없음)
+  neverCloses: boolean; // 연중무휴
+  closedWeekdays: number[]; // 정기 휴무 요일 (0=일 … 6=토)
+  holidayNote?: string; // 달력 없이 확정 못 하는 명절·공휴일 힌트(안내용, 판단엔 미사용)
+}
+
 export interface CourseStop {
   spot: WhaleSpot;
   day: number;
@@ -133,6 +147,7 @@ export interface CourseStop {
   arrive: string; // "10:00" — 이동시간 반영 계산
   legKm: number; // 같은 날 직전 지점에서의 이동 거리(km). 하루 첫 지점은 0.
   isPeak: boolean; // 기준 날짜 기준 제철인지
+  openHours?: string; // 운영시간 라벨(예: "09:00~18:00", "상시 개방") — W7
   note: string;
 }
 
