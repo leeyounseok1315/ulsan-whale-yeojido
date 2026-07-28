@@ -3,7 +3,8 @@ import { getSpots } from "@/backend/lib/data";
 import { buildCourse } from "@/backend/lib/recommend";
 import { isValidRefDate, resolveRefDate } from "@/backend/lib/season";
 import { cached } from "@/backend/lib/cache";
-import { localizeSpot, resolveLang, sourceLabel } from "@/backend/lib/i18n";
+import { getNearby, isNearbyType } from "@/backend/lib/nearby";
+import { localizeNearby, localizeSpot, resolveLang, sourceLabel } from "@/backend/lib/i18n";
 import { INTERESTS, type Companion, type Duration, type Interest } from "@/backend/lib/types";
 
 const COMPANIONS: Companion[] = ["family", "couple", "friends", "solo"];
@@ -60,5 +61,34 @@ export async function GET(req: NextRequest) {
     },
     { tags: ["spots"] },
   );
+
+  // 주변 연계 옵션 (W8) — ?nearby=food|lodging|tour. 엔진(buildCourse)은 손대지 않고
+  // 라우트 후처리로 스톱마다 주변을 붙인다(캐시된 코스는 불변 유지 → 새 객체로 복제).
+  const nearbyType = req.nextUrl.searchParams.get("nearby");
+  if (isNearbyType(nearbyType)) {
+    const stops = await mapWithConcurrency(course.stops, 3, async (st) => ({
+      ...st,
+      nearby: (await getNearby(st.spot.lon, st.spot.lat, { type: nearbyType, radius: 1500, limit: 2 })).map((n) =>
+        localizeNearby(n, lang),
+      ),
+    }));
+    return NextResponse.json({ source: sourceLabel(lang), course: { ...course, stops } });
+  }
+
   return NextResponse.json({ source: sourceLabel(lang), course });
+}
+
+/** 고정 동시성 map — 주변 연계 호출이 한꺼번에 몰려 data.go.kr 제한에 걸리지 않게. */
+async function mapWithConcurrency<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(size, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]);
+      }
+    }),
+  );
+  return out;
 }

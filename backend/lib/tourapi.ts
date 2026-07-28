@@ -98,6 +98,28 @@ export async function searchKeyword(keyword: string, opts?: CallOpts): Promise<R
   return (await callBody("searchKeyword2", { keyword, pageNo: "1", numOfRows: "100" }, true, opts)).items;
 }
 
+/**
+ * 좌표 기반 주변 목록 (W8). arrange="E"면 거리순 정렬 + 응답에 dist(m) 포함.
+ * areaCode를 붙이지 않는다(위치 기반이라 불필요·오류). 절대규칙 #5의 GreenTour 지역기반과 무관 — KorService2다.
+ */
+export async function locationBasedList(
+  lon: number,
+  lat: number,
+  params: { radius: number; contentTypeId?: string; numOfRows?: number },
+  opts?: CallOpts,
+): Promise<RawTourItem[]> {
+  const p: Record<string, string> = {
+    mapX: String(lon),
+    mapY: String(lat),
+    radius: String(params.radius),
+    arrange: "E", // 거리순(+dist)
+    pageNo: "1",
+    numOfRows: String(params.numOfRows ?? 20),
+  };
+  if (params.contentTypeId) p.contentTypeId = params.contentTypeId;
+  return (await callBody("locationBasedList2", p, false, opts)).items;
+}
+
 /** contentId 단건 상세 (areaCode 미포함). 지역 목록에 안 잡히는 핵심 스팟(예: 반구대) 보장 수집·overview 보강. */
 export async function detailCommon(contentId: string, opts?: CallOpts): Promise<RawTourItem | null> {
   const { items } = await callBody("detailCommon2", { contentId }, false, opts);

@@ -11,6 +11,7 @@ export interface RawTourItem {
   addr2?: string;
   mapx?: string; // 경도(lon)
   mapy?: string; // 위도(lat)
+  dist?: string; // locationBasedList2 거리(m) — 주변 연계(W8)에서만 채워짐
   firstimage?: string;
   firstimage2?: string;
   tel?: string;
@@ -140,6 +141,20 @@ export interface OpeningInfo {
   holidayNote?: string; // 달력 없이 확정 못 하는 명절·공휴일 힌트(안내용, 판단엔 미사용)
 }
 
+/** 주변 연계 스팟(W8) — locationBasedList2 기반. 코스 지점·상세 주변 먹거리·숙박 보강. */
+export interface NearbySpot {
+  id: string;
+  title: string;
+  contentTypeId: string;
+  contentTypeLabel: string;
+  address: string;
+  lon: number;
+  lat: number;
+  distanceM: number; // 기준 좌표로부터 거리(m)
+  image: string | null;
+  tel: string | null;
+}
+
 export interface CourseStop {
   spot: WhaleSpot;
   day: number;
@@ -148,6 +163,7 @@ export interface CourseStop {
   legKm: number; // 같은 날 직전 지점에서의 이동 거리(km). 하루 첫 지점은 0.
   isPeak: boolean; // 기준 날짜 기준 제철인지
   openHours?: string; // 운영시간 라벨(예: "09:00~18:00", "상시 개방") — W7
+  nearby?: NearbySpot[]; // 주변 먹거리·숙박(W8) — ?nearby= 요청 시에만 채움
   note: string;
 }
 

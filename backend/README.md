@@ -4,7 +4,7 @@
 
 ```
 backend/
-  routes/       API 핸들러 본체 — spots·spotDetail·recommend·health·img·batchCollect·adminPurge
+  routes/       API 핸들러 본체 — spots·spotDetail·recommend·nearby·health·img·batchCollect·adminPurge
   lib/
     auth.ts       Cron/관리 엔드포인트 토큰 가드
     tourapi.ts    관광 OpenAPI(*2) 클라이언트 — serviceKey는 여기서만 사용
@@ -16,6 +16,7 @@ backend/
     introFields.ts detailIntro2 필드 추출 공용(detail·data 공유) — 운영시간·휴무·요금·전화
     operating.ts  운영정보 파서(W7) — 자유텍스트 운영시간·휴무요일 → 구조화 + isClosedOn
     i18n.ts       다국어(ko·en) — 영문 스팟 큐레이션·지역화·로케일 유틸(?lang=en)
+    nearby.ts     주변 연계(W8) — locationBasedList2 거리순·반경필터, 캐시·스냅샷 폴백
     recommend.ts  코스 추천 엔진(동행·기간·관심사·제철 가중 → 거리 순서화 → 시간 스케줄 + 휴무 제외)
     season.ts     시즌 — 가용성(고래바다여행선 4~11월)·제철(peak)·대체 스팟, 날짜 주입
     cache.ts      캐시(Upstash Redis 우선 + 인메모리 폴백)
@@ -34,5 +35,6 @@ backend/
 - **추천 결과는 `spots` 태그로 캐싱**됩니다(동일 입력 동일 결과). 큐레이션·수집이 갱신되면 `purgeTag("spots")`가 스팟·상세·코스 캐시를 함께 무효화합니다.
 - **다국어는 `?lang=en`** — `/api/spots`·`/api/spots/:id`·`/api/recommend`에 붙이면 영문 스팟·코스 안내를 반환합니다(기본 국문, 비지원 값은 국문 폴백). getSpots 캐시는 **국문 정본 1벌**만 두고 응답 시점에 `localizeSpot`으로 지역화합니다.
 - ⚠️ **영문 콘텐츠는 지금 큐레이션(`i18n.SPOT_I18N`)입니다.** 관광 OpenAPI 영문 서비스(EngService2)는 별도 활용신청·승인이 필요해 현재 키로는 403입니다. 승인 후 `SPOT_I18N`을 EngService2 응답으로 갈아끼우면 됩니다(구조 동일). 화면 언어 전환 UI는 프론트 재디자인 때 붙입니다.
+- **주변 연계(W8): `/api/nearby?spotId=…&type=food|lodging|tour&radius=&limit=&lang=`** (또는 `lon`·`lat` 직접). `locationBasedList2` 거리순·반경필터. 추천엔 `/api/recommend?…&nearby=food`로 스톱마다 주변을 붙입니다(엔진 미수정, 라우트 후처리). 위치 기반이라 mock 모드에선 빈 배열.
 - 절대규칙: GreenTourService 지역기반 API 미사용, 지역 수집은 `areaBasedList2`만.
 - 서버 기동 예열은 루트 `instrumentation.ts`가 `backend/lib`를 호출.

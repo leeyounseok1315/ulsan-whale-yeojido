@@ -1,4 +1,4 @@
-import type { WhaleSpot } from "./types";
+import { CONTENT_TYPE_LABEL, type NearbySpot, type WhaleSpot } from "./types";
 
 // 다국어(i18n) — 국문(ko) 기본 + 영문(en). (로드맵 2단계: 다국어 확장)
 //
@@ -50,6 +50,26 @@ export function localizeSpot(spot: WhaleSpot, lang: Lang): WhaleSpot {
 /** 출처 라벨 — 절대규칙 #1: 공사 명칭 미노출, 중립 표현만. */
 export function sourceLabel(lang: Lang): string {
   return lang === "en" ? "Public data" : "공공데이터";
+}
+
+// 콘텐츠타입 라벨 영문(주변 연계 등에서 사용). 스팟명은 큐레이션이 아니라 번역 불가 → 국문 유지.
+const CONTENT_TYPE_EN: Record<string, string> = {
+  "12": "Attraction",
+  "14": "Culture",
+  "15": "Festival",
+  "25": "Course",
+  "28": "Leisure",
+  "32": "Lodging",
+  "38": "Shopping",
+  "39": "Restaurant",
+};
+export function contentTypeLabel(id: string, lang: Lang): string {
+  return lang === "en" ? CONTENT_TYPE_EN[id] ?? "Place" : CONTENT_TYPE_LABEL[id] ?? "관광";
+}
+
+/** 주변 스팟 지역화 — 타입 라벨만 영문화(임의 상호명은 번역하지 않음, 정직한 폴백). */
+export function localizeNearby(n: NearbySpot, lang: Lang): NearbySpot {
+  return lang === "ko" ? n : { ...n, contentTypeLabel: contentTypeLabel(n.contentTypeId, lang) };
 }
 
 const MONTHS_EN = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
