@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&family=Black+Han+Sans&display=swap");
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
 @import "tailwindcss";
 
@@ -23,6 +23,28 @@
   --font-display: "Nanum Myeongjo", "Apple SD Gothic Neo", serif;
   --font-body: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* ─────────────────────────────────────────────────────────────
+     콘솔-크롬 팔레트 (getdesign.md — Y2K 하드웨어 페이스플레이트)
+     닌텐도 IP는 미사용 — 색·질감·타이포 처리 방식만 차용, 브랜드는 울산고래여지도.
+     ───────────────────────────────────────────────────────────── */
+  --color-signal: #f68d1f;      /* 시그널 오렌지 — 전진/제출 */
+  --color-amber: #ecab37;       /* 앰버 — 유틸 칩·배지 */
+  --color-navgold: #e48600;     /* 내브 골드 — 메뉴 단어 */
+  --color-seal2: #e60012;       /* 브랜드 레드 — 로고·경보 (인주와 별개) */
+  --color-canvas: #7a8aba;      /* 페리윙클 금속 — 인터페이스 본체 */
+  --color-canvas-soft: #9fbee7; /* 페일 스카이 — 서브내브·밝은 인셋 */
+  --color-lavender: #acace7;    /* 페일 라벤더 — 홈 히어로 필드 */
+  --color-ice: #c0d5e6;         /* 페일 아이스 — 뉴스 히어로 */
+  --color-periwinkle: #8ba1d4;  /* 라이트 페리윙클 — 상승 중간 패널 */
+  --color-chrome: #3d4f97;      /* 크롬 인디고 — 베벨 그림자선·탭 엣지 */
+  --color-mutedindigo: #60619c; /* 뮤티드 인디고 — 비활성 탭 */
+  --color-platinum: #dedede;    /* 플래티넘 — 리스트행·인셋 콘텐츠 면 */
+  --color-carbon: #21242e;      /* 카본 네이비 — 커맨드 슬랩·푸터·잉크 */
+  --color-hairline: #5a5f8c;    /* 블렌디드 베벨 디바이더 */
+  --color-teal: #206479;        /* 시스템 히어로 회로기판 시안 */
+
+  --font-boxart: "Black Han Sans", "Arial Black", var(--font-body);
 }
 
 :root {
@@ -109,4 +131,72 @@ body::before {
   .wy-fade-up {
     opacity: 1;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   콘솔-크롬 유틸 — '조립된 기계 페이스플레이트' 룩 (getdesign.md)
+   깊이 = 소프트 그림자가 아니라 하드 베벨. 모서리는 각지게(챔퍼), 둥굴림은 절제.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 상승 플레이트 — 위 하이라이트 + 아래 크롬-인디고 그림자선 (배경색은 톤이 정함) */
+.wy-plate {
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
+  border-left: 1px solid rgba(255, 255, 255, 0.32);
+  border-right: 1px solid var(--color-chrome);
+  border-bottom: 2px solid var(--color-chrome);
+}
+/* 인셋(함몰) — 위 어둡게 + 아래 밝게 */
+.wy-inset {
+  border-top: 1px solid var(--color-chrome);
+  border-left: 1px solid var(--color-mutedindigo);
+  border-right: 1px solid rgba(255, 255, 255, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+}
+/* 베벨 칩(버튼) — 밝은 윗엣지 + 하드 아랫그림자 */
+.wy-chip {
+  border-top: 1px solid rgba(255, 255, 255, 0.55);
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.34);
+  border-right: 1px solid rgba(0, 0, 0, 0.22);
+}
+.wy-chip:active {
+  border-top: 2px solid rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  transform: translateY(1px);
+}
+/* 카본 커맨드 슬랩 + 하프톤 도트(스피커 그릴 느낌) */
+.wy-carbon {
+  background-color: var(--color-carbon);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1.5px);
+  background-size: 4px 4px;
+}
+/* 챔퍼 — 45° 잘린 모서리(제조 페이스플레이트 엣지) */
+.wy-chamfer {
+  clip-path: polygon(
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%,
+    0 12px
+  );
+}
+/* 박스아트 워드마크 — 두꺼운 아웃라인 + 하드 드롭섀도(게임 커버 로고타입) */
+.wy-boxart {
+  font-family: var(--font-boxart);
+  color: #fff;
+  -webkit-text-stroke: 2px var(--color-carbon);
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 rgba(33, 36, 46, 0.5);
+  letter-spacing: 0.01em;
+}
+/* 크롬 라벨 — 대문자·트래킹(실크스크린 레전드 보이스) */
+.wy-legend {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* 점선 하이라인(Y2K 디테일) */
+.wy-dotline {
+  border-top: 1px dotted var(--color-mutedindigo);
 }
