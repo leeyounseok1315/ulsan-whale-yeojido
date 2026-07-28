@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PetroglyphWhale } from "@/frontend/components/ui/PetroglyphWhale";
+import { WhaleMascot } from "@/frontend/components/chrome/WhaleMascot";
 
 // 커맨드 레이어 — 카본 슬랩 상단 내브 + 페일-스카이 서브내브(듀얼 내브 시그니처).
 // 로고/마스코트는 울산고래여지도 자체 브랜드(닌텐도 IP 미사용).
@@ -19,7 +19,7 @@ function LogoPill() {
       className="wy-chip inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1"
       aria-label="울산고래여지도 홈"
     >
-      <PetroglyphWhale className="h-4 w-auto" strokeWidth={3} stroke="var(--color-seal2)" />
+      <WhaleMascot className="h-6 w-auto" />
       <span className="wy-legend text-[12px] text-[color:var(--color-seal2)]">울산고래여지도</span>
     </Link>
   );

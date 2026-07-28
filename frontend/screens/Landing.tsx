@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PetroglyphWhale } from "@/frontend/components/ui/PetroglyphWhale";
+import { WhaleMascot } from "@/frontend/components/chrome/WhaleMascot";
 import { MAP_H, MAP_W, UlsanBaseMap } from "@/frontend/components/map/UlsanBaseMap";
 import { NavBar, SubnavStrip } from "@/frontend/components/chrome/NavBar";
 import { Plate } from "@/frontend/components/chrome/Plate";
@@ -61,7 +61,7 @@ export default function Landing() {
                 <span className="wy-legend text-[10px] text-carbon">고래의 시선으로!</span>
                 <span className="absolute -bottom-1.5 left-6 h-3 w-3 rotate-45 bg-white" />
               </div>
-              <PetroglyphWhale className="wy-swim mt-3 h-24 w-auto" strokeWidth={2.6} stroke="var(--color-carbon)" />
+              <WhaleMascot animate className="mt-2 h-32 w-auto" />
             </div>
           </div>
         </Plate>
