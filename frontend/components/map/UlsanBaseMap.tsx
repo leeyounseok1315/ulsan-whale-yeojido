@@ -36,8 +36,8 @@ export function UlsanBaseMap() {
   return (
     <>
       {/* 바다(동해) — 쪽빛 톤 + 잔물결 */}
-      <path d="M735 60 C760 200 745 360 770 520 C760 620 775 680 760 720 L1000 720 L1000 60 Z" fill="var(--color-water)" opacity="0.08" />
-      <g stroke="var(--color-water)" strokeWidth="1.5" opacity="0.28" fill="none" strokeLinecap="round">
+      <path d="M735 60 C760 200 745 360 770 520 C760 620 775 680 760 720 L1000 720 L1000 60 Z" fill="var(--color-teal)" opacity="0.16" />
+      <g stroke="var(--color-teal)" strokeWidth="1.5" opacity="0.28" fill="none" strokeLinecap="round">
         {waves.map((y) => (
           <path key={y} d={`M820 ${y} q20 -8 40 0 q20 8 40 0 q20 -8 40 0`} />
         ))}
@@ -46,28 +46,28 @@ export function UlsanBaseMap() {
       {/* 육지 — 한지보다 살짝 짙은 톤 */}
       <path
         d="M80 90 L735 60 C760 200 745 360 770 520 C760 620 775 680 760 720 L80 700 Z"
-        fill="var(--color-paper-deep)"
-        opacity="0.45"
+        fill="var(--color-canvas-soft)"
+        opacity="0.8"
       />
 
       {/* 해안선 (먹선) + 장생포 만(灣) 노치 */}
       <path
         d="M735 60 C760 200 745 360 768 470 C772 500 760 512 742 516 C726 520 720 532 730 548 C748 575 770 600 760 720"
         fill="none"
-        stroke="var(--color-ink)"
+        stroke="var(--color-carbon)"
         strokeWidth="2.4"
         strokeLinecap="round"
         opacity="0.85"
       />
 
       {/* 태화강 — 쌍선 하천 */}
-      <g fill="none" stroke="var(--color-water)" strokeLinecap="round">
+      <g fill="none" stroke="var(--color-teal)" strokeLinecap="round">
         <path d="M150 430 C300 405 460 430 600 405 C660 396 710 410 742 430" strokeWidth="3.4" opacity="0.55" />
         <path d="M150 446 C300 421 460 446 600 421 C660 412 710 426 742 446" strokeWidth="2" opacity="0.35" />
       </g>
 
       {/* 영남알프스 — 톱니 산줄기 (서쪽) */}
-      <g fill="none" stroke="var(--color-ink-soft)" strokeWidth="2" strokeLinejoin="round" opacity="0.6">
+      <g fill="none" stroke="var(--color-chrome)" strokeWidth="2" strokeLinejoin="round" opacity="0.6">
         <path d={ridge(110, 360, 6, 34, 26)} />
         <path d={ridge(125, 410, 5, 38, 30)} />
         <path d={ridge(140, 470, 4, 34, 22)} />
@@ -75,14 +75,14 @@ export function UlsanBaseMap() {
       </g>
 
       {/* 외곽 카르투슈 테두리 (쌍선) */}
-      <rect x="20" y="20" width={MAP_W - 40} height={MAP_H - 40} fill="none" stroke="var(--color-ink)" strokeWidth="1.6" opacity="0.5" />
-      <rect x="30" y="30" width={MAP_W - 60} height={MAP_H - 60} fill="none" stroke="var(--color-ink)" strokeWidth="0.8" opacity="0.35" />
+      <rect x="20" y="20" width={MAP_W - 40} height={MAP_H - 40} fill="none" stroke="var(--color-carbon)" strokeWidth="1.6" opacity="0.5" />
+      <rect x="30" y="30" width={MAP_W - 60} height={MAP_H - 60} fill="none" stroke="var(--color-carbon)" strokeWidth="0.8" opacity="0.35" />
 
       {/* 방위표 (좌상) */}
-      <g transform="translate(78 110)" stroke="var(--color-ink)" strokeWidth="1.4" fill="none" opacity="0.55">
+      <g transform="translate(78 110)" stroke="var(--color-carbon)" strokeWidth="1.4" fill="none" opacity="0.55">
         <circle r="16" />
-        <path d="M0 -22 L4 0 L0 22 L-4 0 Z" fill="var(--color-seal)" stroke="none" opacity="0.85" />
-        <text x="0" y="-26" textAnchor="middle" fontSize="13" fill="var(--color-ink)" stroke="none" fontFamily="var(--font-display)">北</text>
+        <path d="M0 -22 L4 0 L0 22 L-4 0 Z" fill="var(--color-signal)" stroke="none" opacity="0.85" />
+        <text x="0" y="-26" textAnchor="middle" fontSize="13" fill="var(--color-carbon)" stroke="none" fontFamily="var(--font-display)">北</text>
       </g>
     </>
   );

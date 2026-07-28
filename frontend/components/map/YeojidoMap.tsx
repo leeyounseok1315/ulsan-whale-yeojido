@@ -230,7 +230,7 @@ export function YeojidoMap({
   return (
     <div
       ref={box}
-      className="paper-grain relative h-full w-full touch-none select-none overflow-hidden"
+      className="relative h-full w-full touch-none select-none overflow-hidden bg-canvas"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -290,7 +290,7 @@ export function YeojidoMap({
             key={b.l}
             aria-label={b.l}
             onClick={b.f}
-            className="flex h-11 w-11 items-center justify-center rounded-[3px] border border-ink/25 bg-paper-light/90 text-lg text-ink shadow-sm transition-colors hover:bg-paper-light"
+            className="wy-chip flex h-11 w-11 items-center justify-center rounded-[2px] bg-canvas-soft text-lg text-carbon transition-[filter] hover:brightness-105"
           >
             {b.t}
           </button>
