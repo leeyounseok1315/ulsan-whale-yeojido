@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { YeojidoMap } from "@/frontend/components/map/YeojidoMap";
 import { MapLegend } from "@/frontend/components/map/MapLegend";
-import { SpotDetailPanel } from "@/frontend/components/map/SpotDetailPanel";
+import { SpotVisit } from "@/frontend/components/map/SpotVisit";
 import { WhaleMascot } from "@/frontend/components/chrome/WhaleMascot";
 import { NavBar, SubnavStrip } from "@/frontend/components/chrome/NavBar";
 import { Plate } from "@/frontend/components/chrome/Plate";
@@ -155,10 +155,11 @@ export default function MapPage() {
             </ChromeButton>
           </StatusScreen>
         ) : (
-          <YeojidoMap spots={shown} selectedId={selected?.id ?? null} onSelect={setSelected} panelOpen={Boolean(selected)} />
+          <YeojidoMap spots={shown} selectedId={selected?.id ?? null} onSelect={setSelected} />
         )}
 
-        {selected && <SpotDetailPanel spot={selected} onClose={() => setSelected(null)} />}
+        {/* 마커를 누르면 그 장소에 '도착'한 전체화면으로 입장 */}
+        {selected && <SpotVisit spot={selected} onClose={() => setSelected(null)} />}
       </div>
     </main>
   );

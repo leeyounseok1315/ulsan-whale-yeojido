@@ -45,6 +45,9 @@ const COMPANION_WEIGHT: Record<Companion, Record<WhaleThemeId, number>> = {
 // 관심사 매칭 규칙 + 가중치 (선택한 관심사에 부합하는 스팟을 상위로).
 const INTEREST_WEIGHT = 0.8;
 const PEAK_WEIGHT = 0.7; // 제철 스팟 가중(시즌 결합)
+// 그날 실제로 열리는 축제 가중 — 며칠뿐인 일회성이라 상시 스팟보다 우선한다.
+// (핵심 스팟 가중 +1을 넘겨, 당일 코스처럼 자리가 적을 때도 축제가 들어오도록)
+const EVENT_TODAY_WEIGHT = 1.4;
 const INTEREST_MATCH: Record<Interest, (s: WhaleSpot) => boolean> = {
   history: (s) => s.theme === "heritage" || s.contentTypeId === "14",
   nature: (s) => s.theme === "nature",
@@ -183,6 +186,7 @@ export function buildCourse(
           (w[s.theme] ?? 1) +
           interestBonus(s, interests) +
           (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) + // 제철 가중치(시즌 결합) — '선별'에 반영
+          (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate) ? EVENT_TODAY_WEIGHT : 0) +
           s.relevance,
       }))
       .sort((a, b) => b.score - a.score)

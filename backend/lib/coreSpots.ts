@@ -21,6 +21,8 @@ export const LINKED_SPOTS: Record<string, WhaleThemeId> = {
   "2674942": "nature", // 영남알프스 복합웰컴센터
   "S-TAEHWA": "nature", // (mock)
   "S-YEONGNAM": "nature", // (mock)
+  // 울산고래축제 — 소개글의 '고래 관찰' 문구 때문에 observe로 오분류되던 것을 문화로 고정.
+  "553263": "culture",
 };
 
 // id 또는 mockId로 조회
@@ -31,5 +33,10 @@ export const CORE_BY_ID: Record<string, CoreSpot> = Object.fromEntries(
 // areaCode=7 지역 목록에 안 잡히는 스팟(예: 반구대)까지 보장 수집하기 위한 detailCommon2 대상 ID.
 export const CORE_FETCH_IDS = CORE_SPOTS.map((c) => c.id);
 
-// 연계 자연 자원 단건 조회 대상(태화강 국가정원·영남알프스) — 빠른 수집 경로에서 보장 포함.
-export const LINKED_FETCH_IDS = ["128202", "2674942"];
+/**
+ * 연계 자연 자원 + 축제 단건 조회 대상 — 빠른 수집 경로에서 보장 포함.
+ * 축제(553263 울산고래축제)는 회차가 끝나면 searchKeyword2 결과에서 빠지는데(실측),
+ * detailCommon2로는 계속 조회된다. 키워드 검색에만 기대면 스팟이 통째로 사라지므로 단건으로 보장한다.
+ * (기간 밖 축제는 추천 엔진이 코스에서 제외하고, 지도에는 남아 '언제 열리는지'를 보여준다)
+ */
+export const LINKED_FETCH_IDS = ["128202", "2674942", "553263"];
