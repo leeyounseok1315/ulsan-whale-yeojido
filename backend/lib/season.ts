@@ -16,14 +16,21 @@ export const CRUISE_SEASON: SeasonRule = {
 /** 주말만 운항하는 달 — 평일 방문이면 코스에서 제외한다. */
 export const CRUISE_WEEKEND_ONLY_MONTHS = [11];
 
-/** YYYY-MM-DD 형식이면서 실재하는 날짜인지. (2027-02-29, 2026-13-45 같은 값은 거부) */
+// 여행 계획으로 의미 있는 연도 범위. 0000년·9999년 같은 값은 형식만 맞을 뿐
+// 시즌·축제 판정이 무의미하므로 입력 단계에서 거른다.
+const MIN_YEAR = 2000;
+const MAX_YEAR = 2100;
+
+/** YYYY-MM-DD 형식이면서 실재하고, 계획 가능한 연도 범위인지. (2027-02-29, 0000-01-01 등 거부) */
 export function isValidRefDate(s: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return false;
+  const year = Number(m[1]);
+  if (year < MIN_YEAR || year > MAX_YEAR) return false;
   const d = new Date(`${s}T00:00:00`);
   return (
     !Number.isNaN(d.getTime()) &&
-    d.getFullYear() === Number(m[1]) &&
+    d.getFullYear() === year &&
     d.getMonth() + 1 === Number(m[2]) &&
     d.getDate() === Number(m[3])
   );

@@ -3,7 +3,7 @@ import { attachSeasonRules, eventPeriodOf, toWhaleSpot } from "./adapter";
 import { detailIntro } from "./tourapi";
 import { extractIntro } from "./introFields";
 import { parseOpening } from "./operating";
-import { cached, setCache } from "./cache";
+import { cached, redisAvailable, redisCommand, setCache } from "./cache";
 import { collectAndNormalize, collectFast, isMockMode } from "./collect";
 import { recordBatch } from "./metrics";
 
@@ -98,9 +98,39 @@ export async function getSpot(id: string): Promise<WhaleSpot | null> {
   return (await getSpots()).find((s) => s.id === id) ?? null;
 }
 
+// 배치 중복 실행 방지 (W9) — Cron과 수동 트리거가 겹치면 전수 수집이 두 번 돌아
+// TourAPI 일일 쿼터를 두 배로 태우고, 서로의 결과를 덮어쓴다.
+// Redis가 있으면 인스턴스 간 락(SET NX EX), 없으면 프로세스 내 플래그로 최소 방어.
+const BATCH_LOCK_KEY = "batch:refresh:lock";
+const BATCH_LOCK_SEC = 15 * 60; // 전수 수집 최대 소요보다 넉넉히. 만료로 자동 해제(데드락 방지).
+let localBatchRunning = false;
+
+async function acquireBatchLock(): Promise<boolean> {
+  if (redisAvailable()) {
+    try {
+      // SET key value NX EX seconds → 이미 있으면 null
+      const r = await redisCommand(["SET", BATCH_LOCK_KEY, String(Date.now()), "NX", "EX", String(BATCH_LOCK_SEC)]);
+      return r !== null;
+    } catch {
+      /* Redis 장애 시 로컬 플래그로 폴백 */
+    }
+  }
+  if (localBatchRunning) return false;
+  localBatchRunning = true;
+  return true;
+}
+async function releaseBatchLock(): Promise<void> {
+  localBatchRunning = false;
+  if (redisAvailable()) await redisCommand(["DEL", BATCH_LOCK_KEY]).catch(() => {});
+}
+
 /** 배치/수집 트리거 — 강제 재수집 → 캐시 갱신 → 배치 이력 기록. (Vercel Cron·수집 스크립트가 호출) */
 export async function refreshSpots() {
   const start = Date.now();
+  if (!(await acquireBatchLock())) {
+    // 조용히 성공한 척하지 않는다 — 호출자가 '이번엔 안 돌았다'를 알아야 한다.
+    return { ok: true as const, skipped: "already-running" as const, count: 0, durationMs: 0 };
+  }
   try {
     const { items, stats } = await collectAndNormalize();
     // 0건이면 캐시·스냅샷을 덮어쓰지 않는다 — 배치가 빈 데이터로 정상본을 파괴하면 복구가 어렵다.
@@ -109,8 +139,10 @@ export async function refreshSpots() {
     recordBatch(true, spots.length);
     return { ok: true as const, count: spots.length, normalize: stats, durationMs: Date.now() - start };
   } catch (err) {
-    recordBatch(false, 0);
+    recordBatch(false, 0); // 실패는 메트릭에 남고 ALERT_WEBHOOK_URL로 알림이 나간다
     throw err;
+  } finally {
+    await releaseBatchLock();
   }
 }
 

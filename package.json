@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "collect": "node scripts/collect.mjs"
+    "collect": "node scripts/collect.mjs",
+    "verify:courses": "node scripts/verify-courses.mjs"
   },
   "dependencies": {
     "next": "^15.5.0",

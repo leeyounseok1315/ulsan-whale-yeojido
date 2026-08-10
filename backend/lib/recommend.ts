@@ -34,16 +34,34 @@ const SPEED_KMH = 32; // 이동 평균 속도(도심 근사)
 const fmtTime = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
-// 동행 유형별 테마 가중치 (결과 차별화).
+/**
+ * 동행 유형별 테마 가중치 (v1 — 결과 차별화의 핵심).
+ * 폭을 넓히는 것만으론 부족했다. 핵심 스팟 4곳이 core+relevance 2.0 동점이라,
+ * '1순위 테마만 다르고 2·3순위가 같으면' 나머지 자리가 같은 스팟으로 채워져 코스가 겹쳤다.
+ * → 동행마다 2순위까지 서로 다른 테마가 오도록 배치했다(격자 탐색으로 검증:
+ *   동행 쌍 평균 자카드 0.83→0.35, 완전 동일 쌍 1→0).
+ */
 const COMPANION_WEIGHT: Record<Companion, Record<WhaleThemeId, number>> = {
-  family: { culture: 1.4, heritage: 1.2, nature: 1.0, observe: 1.1 },
-  couple: { nature: 1.4, observe: 1.2, culture: 1.0, heritage: 0.9 },
-  friends: { observe: 1.4, culture: 1.1, heritage: 1.1, nature: 1.0 },
-  solo: { heritage: 1.4, culture: 1.1, nature: 1.1, observe: 0.9 },
+  family: { culture: 2.0, nature: 1.3, heritage: 0.9, observe: 0.8 }, // 전시·체험 → 강변 산책
+  couple: { nature: 2.0, culture: 1.2, observe: 0.9, heritage: 0.6 }, // 경관 → 분위기 있는 실내
+  friends: { observe: 2.0, heritage: 1.3, nature: 1.0, culture: 0.9 }, // 바다 액티비티 → 인증샷 유산
+  solo: { heritage: 2.0, nature: 1.3, observe: 0.9, culture: 0.8 }, // 유산·사색 → 조용한 자연
 };
 
+// 같은 테마가 코스를 독식하지 않도록 n번째 선택마다 감쇠(체감 효용).
+// 장생포 문화 4곳이 나란히 들어차던 문제를 푼다 — 테마 다양성이 곧 여행 만족도.
+// 0.40: 격자 탐색에서 차별화를 해치지 않으면서 코스당 테마 수를 2.25→2.5로 올린 값.
+const THEME_DIMINISH = 0.4;
+// 같은 지리 클러스터(반경 CLUSTER_KM) 반복 선택 감쇠. 장생포는 서비스의 심장이라
+// 배제가 아니라 '완만한' 감쇠로 둔다(과하면 고래 테마가 흐려진다 — 절대규칙 #3).
+const CLUSTER_DIMINISH = 0.15;
+const CLUSTER_KM = 1.2;
+
 // 관심사 매칭 규칙 + 가중치 (선택한 관심사에 부합하는 스팟을 상위로).
-const INTEREST_WEIGHT = 0.8;
+// v1: 0.8 → 1.3. 관심사는 사용자가 '명시적으로 고른' 신호라 동행 테마 선호(폭 1.4)를
+// 넘어설 수 있어야 한다. 0.8일 땐 이미 상위인 테마에 묻혀 결과가 안 바뀌는 조합이 있었다
+// (예: solo+nature — solo의 nature가 이미 2순위라 순서 불변).
+const INTEREST_WEIGHT = 1.3;
 const PEAK_WEIGHT = 0.7; // 제철 스팟 가중(시즌 결합)
 // 그날 실제로 열리는 축제 가중 — 며칠뿐인 일회성이라 상시 스팟보다 우선한다.
 // (핵심 스팟 가중 +1을 넘겨, 당일 코스처럼 자리가 적을 때도 축제가 들어오도록)
@@ -52,7 +70,9 @@ const INTEREST_MATCH: Record<Interest, (s: WhaleSpot) => boolean> = {
   history: (s) => s.theme === "heritage" || s.contentTypeId === "14",
   nature: (s) => s.theme === "nature",
   experience: (s) => /체험|마을|모노레일|둘레길|옛길/.test(s.title),
-  observation: (s) => s.theme === "observe",
+  // 고래 관찰 — theme만 보면 이미 최상위인 크루즈만 걸려 순서가 안 바뀌었다.
+  // 실제로 고래를 '보는' 경험(회유해면·생태체험관·박물관 전시)까지 포함해야 선택이 달라진다.
+  observation: (s) => s.theme === "observe" || /생태체험|박물관|회유/.test(s.title),
   food: (s) => s.contentTypeId === "39",
 };
 
@@ -176,28 +196,50 @@ export function buildCourse(
   const dropped = new Set([...closedSeasonal, ...closedEvent, ...closedByRest]);
   const pool = spots.filter((s) => !dropped.has(s));
 
-  const rank = (list: WhaleSpot[]) => {
-    const w = COMPANION_WEIGHT[companion];
-    return list
-      .map((s) => ({
-        s,
-        score:
-          (s.isCore ? 1 : 0.4) +
-          (w[s.theme] ?? 1) +
-          interestBonus(s, interests) +
-          (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) + // 제철 가중치(시즌 결합) — '선별'에 반영
-          (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate) ? EVENT_TODAY_WEIGHT : 0) +
-          s.relevance,
-      }))
-      .sort((a, b) => b.score - a.score)
-      .map((x) => x.s);
+  // 기본 점수 — 스팟 자체의 매력(동행·관심사·시즌 반영). 선택 순서와 무관한 고정값.
+  const w = COMPANION_WEIGHT[companion];
+  const baseScore = (s: WhaleSpot) =>
+    (s.isCore ? 1 : 0.4) +
+    (w[s.theme] ?? 1) +
+    interestBonus(s, interests) +
+    (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) + // 제철 가중치(시즌 결합)
+    (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate) ? EVENT_TODAY_WEIGHT : 0) +
+    s.relevance;
+
+  /**
+   * v1 선별 — 점수 상위 N개를 그냥 자르지 않고, 이미 고른 것과의 '다양성'을 반영해 하나씩 고른다.
+   * 같은 테마·같은 동네가 반복될수록 감쇠하므로 코스가 한쪽으로 쏠리지 않는다.
+   * (기존 slice 방식은 core+relevance가 동점인 장생포 문화 4곳이 자리를 독식했다)
+   */
+  const rank = (list: WhaleSpot[], limit: number): WhaleSpot[] => {
+    const remaining = [...list];
+    const picked: WhaleSpot[] = [];
+    const themeCount = new Map<WhaleThemeId, number>();
+
+    while (picked.length < limit && remaining.length) {
+      let bestIdx = 0;
+      let bestVal = -Infinity;
+      remaining.forEach((s, i) => {
+        const themeSeen = themeCount.get(s.theme) ?? 0;
+        const clusterSeen = picked.filter((p) => haversineKm(p, s) <= CLUSTER_KM).length;
+        const val = baseScore(s) - themeSeen * THEME_DIMINISH - clusterSeen * CLUSTER_DIMINISH;
+        // 동점이면 원본(연관도·핵심 우선 정렬) 순서를 유지 — 재현성 보장.
+        if (val > bestVal) {
+          bestVal = val;
+          bestIdx = i;
+        }
+      });
+      const [chosenSpot] = remaining.splice(bestIdx, 1);
+      picked.push(chosenSpot);
+      themeCount.set(chosenSpot.theme, (themeCount.get(chosenSpot.theme) ?? 0) + 1);
+    }
+    return picked;
   };
-  const ranked = rank(pool);
 
   const days = DAYS[duration];
-  const need = Math.min(ranked.length, days * STOPS_PER_DAY);
-  const chosen = ranked.slice(0, need);
-  const routed = orderByRoute(chosen); // 점수로 '선별' → 거리로 '순서화'
+  const need = Math.min(pool.length, days * STOPS_PER_DAY);
+  const ranked = rank(pool, need);
+  const routed = orderByRoute(ranked); // 점수·다양성으로 '선별' → 거리로 '순서화'
 
   // 이동시간 반영 스케줄링: 하루 10:00 시작, 지점당 체류 + 구간 이동시간으로 도착 시각 계산.
   let prev: WhaleSpot | null = null;
@@ -240,7 +282,7 @@ export function buildCourse(
       ? `${ex.title} isn't available on this date (${reason}).`
       : `${ex.title}${topicParticle(ex.title)} 이 날짜엔 이용할 수 없어요 (${reason}).`;
 
-    const wouldHave = rank([...pool, ex]).slice(0, Math.min(pool.length + 1, days * STOPS_PER_DAY));
+    const wouldHave = rank([...pool, ex], Math.min(pool.length + 1, days * STOPS_PER_DAY));
     const wouldHaveIds = new Set(wouldHave.map((s) => s.id));
     // 열려 있었어도 애초에 코스에 못 들었다면, 그 스팟 때문에 바뀐 건 없다 → 대체를 주장하지 않는다.
     const newcomers = wouldHaveIds.has(ex.id)
@@ -309,6 +351,20 @@ export function buildCourse(
           : `${st.spot.title}${topicParticle(st.spot.title)} 도착 예정 ${st.arrive}엔 이미 문을 닫아요 (운영 ${st.openHours}). 순서를 앞당기는 걸 권해요.`,
       );
     }
+  }
+
+  // 요청한 자리보다 코스가 짧으면 왜 짧은지 알린다 (W9 엣지케이스).
+  // 조용히 줄여 내보내면 사용자는 '2박3일인데 왜 4곳뿐이지?'를 알 길이 없다.
+  const wanted = days * STOPS_PER_DAY;
+  if (stops.length < wanted) {
+    const why = dropped.size > 0;
+    seasonNotes.push(
+      en
+        ? `Only ${stops.length} of ${wanted} slots could be filled on this date` +
+          (why ? " — some places are closed or out of season." : " — the whale-themed pool is small.")
+        : `이 날짜엔 ${wanted}곳 중 ${stops.length}곳만 채울 수 있었어요` +
+          (why ? " — 휴무·비운항인 곳이 있어서예요." : " — 고래 테마 스팟이 그만큼이라서예요."),
+    );
   }
 
   // 제철 안내 — '선별에 우선 반영'이 사실. 순서는 거리 기반이라 앞쪽 배치를 약속하지 않는다.

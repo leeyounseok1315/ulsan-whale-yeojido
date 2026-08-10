@@ -16,6 +16,7 @@ backend/
     introFields.ts detailIntro2 필드 추출 공용(detail·data 공유) — 운영시간·휴무·요금·전화
     operating.ts  운영정보 파서(W7) — 자유텍스트 운영시간·휴무요일 → 구조화 + isClosedOn
     i18n.ts       다국어(ko·en) — 영문 스팟 큐레이션·지역화·로케일 유틸(?lang=en)
+    savedTypes.ts 저장 코스·즐겨찾기 스키마(W9) — ERD course/course_item/favorite 대응 + 마이그레이션
     nearby.ts     주변 연계(W8) — locationBasedList2 거리순·반경필터, 캐시·스냅샷 폴백
     recommend.ts  코스 추천 엔진(동행·기간·관심사·제철 가중 → 거리 순서화 → 시간 스케줄 + 휴무 제외)
     season.ts     시즌 — 가용성(고래바다여행선 4~11월)·제철(peak)·대체 스팟, 날짜 주입
@@ -36,5 +37,8 @@ backend/
 - **다국어는 `?lang=en`** — `/api/spots`·`/api/spots/:id`·`/api/recommend`에 붙이면 영문 스팟·코스 안내를 반환합니다(기본 국문, 비지원 값은 국문 폴백). getSpots 캐시는 **국문 정본 1벌**만 두고 응답 시점에 `localizeSpot`으로 지역화합니다.
 - ⚠️ **영문 콘텐츠는 지금 큐레이션(`i18n.SPOT_I18N`)입니다.** 관광 OpenAPI 영문 서비스(EngService2)는 별도 활용신청·승인이 필요해 현재 키로는 403입니다. 승인 후 `SPOT_I18N`을 EngService2 응답으로 갈아끼우면 됩니다(구조 동일). 화면 언어 전환 UI는 프론트 재디자인 때 붙입니다.
 - **주변 연계(W8): `/api/nearby?spotId=…&type=food|lodging|tour&radius=&limit=&lang=`** (또는 `lon`·`lat` 직접). `locationBasedList2` 거리순·반경필터. 추천엔 `/api/recommend?…&nearby=food`로 스톱마다 주변을 붙입니다(엔진 미수정, 라우트 후처리). 위치 기반이라 mock 모드에선 빈 배열.
+- **추천 엔진 v1(W9)**: 상위 N개를 자르지 않고 **다양성 반영 그리디 선별**을 합니다 — 같은 테마·같은 동네가 반복되면 감쇠(`THEME_DIMINISH`·`CLUSTER_DIMINISH`). 동행 가중치는 **2순위까지 서로 다르게** 배치해야 코스가 갈립니다(1순위만 다르면 나머지 자리가 같은 스팟으로 채워짐). 파라미터를 바꿨다면 `npm run verify:courses`로 불변식을, `scratchpad`의 진단 스크립트로 차별화 지표를 확인하세요.
+- **회귀 게이트: `npm run verify:courses -- http://localhost:3000 http://localhost:3100`** — 동행4×기간3×12개월×2일자 576개 코스의 불변식(휴무 미편성·축제 개최기간·거짓 안내 없음·시각 역행 없음 등)을 전수 검증하고 위반 시 exit 1.
+- **배치 중복 방지(W9)**: `refreshSpots`가 Redis 락(`SET NX EX`, 15분)으로 동시 실행을 막습니다. 겹치면 조용히 성공한 척하지 않고 `{skipped:"already-running"}`을 반환합니다. 실패 시 `ALERT_WEBHOOK_URL`로 알림이 나갑니다(미설정 시 서버 로그).
 - 절대규칙: GreenTourService 지역기반 API 미사용, 지역 수집은 `areaBasedList2`만.
 - 서버 기동 예열은 루트 `instrumentation.ts`가 `backend/lib`를 호출.
