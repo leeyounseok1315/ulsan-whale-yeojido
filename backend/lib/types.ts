@@ -36,6 +36,28 @@ export const CONTENT_TYPE_LABEL: Record<string, string> = {
 /** 고래 테마 분류 — 행정구역(구/군)이 아니다. (절대규칙 #3) */
 export type WhaleThemeId = "culture" | "observe" | "heritage" | "nature";
 
+/** 일반 울산 관광지 분류 — 고래 테마와 별개로 사용한다. */
+export type SpotCategory =
+  | "nature"
+  | "heritage"
+  | "culture"
+  | "experience"
+  | "festival"
+  | "food"
+  | "lodging"
+  | "other";
+
+export const SPOT_CATEGORY_LABEL: Record<SpotCategory, string> = {
+  nature: "자연·경관",
+  heritage: "역사·유산",
+  culture: "문화",
+  experience: "체험·레포츠",
+  festival: "축제·행사",
+  food: "먹거리",
+  lodging: "숙박",
+  other: "기타",
+};
+
 export interface WhaleTheme {
   id: WhaleThemeId;
   label: string;
@@ -49,6 +71,7 @@ export interface WhaleSpot {
   id: string; // contentid
   title: string;
   theme: WhaleThemeId;
+  category: SpotCategory;
   contentTypeId: string;
   contentTypeLabel: string;
   address: string;
@@ -77,18 +100,19 @@ export interface SpotDetail {
 export type Companion = "family" | "couple" | "friends" | "solo";
 export type Duration = "day" | "1n2d" | "2n3d";
 export type Interest = "history" | "nature" | "experience" | "observation" | "food";
-
 export const COMPANION_LABEL: Record<Companion, string> = {
   family: "가족",
   couple: "연인",
   friends: "친구",
   solo: "혼자",
 };
+
 export const DURATION_LABEL: Record<Duration, string> = {
   day: "당일",
   "1n2d": "1박 2일",
   "2n3d": "2박 3일",
 };
+
 // 관심사 — 추천 입력 도메인 확장(W4). 스팟 점수에 가중치로 반영.
 export const INTEREST_LABEL: Record<Interest, string> = {
   history: "역사·유산",

@@ -7,7 +7,10 @@ import { CORE_FETCH_IDS, LINKED_FETCH_IDS } from "./coreSpots";
 // 전수 수집 파이프라인 — areaCode=7 지역 목록 + 고래 키워드 검색 + 핵심 스팟 단건조회를 병합.
 // serviceKey 미발급/USE_MOCK_DATA=true면 mock 픽스처로 동작 (W1~W2 무중단 병행 개발).
 
-const CONTENT_TYPES = ["12", "14", "15", "25", "39", "32"]; // 관광지·문화시설·축제·여행코스·음식점·숙박
+const CONTENT_TYPES = ["12", "14", "15", "25", "39", "32"];
+const MAP_CONTENT_TYPES = ["12", "14", "15", "28"];
+const MAP_PAGE_SIZE = 100;
+
 const WHALE_KEYWORDS = ["고래", "장생포"]; // 28/38(레포츠·쇼핑) 등 지역 목록 밖 항목까지 보강
 const PAGE_SIZE = 100;
 const MAX_PAGES = 30; // 안전장치
@@ -127,13 +130,49 @@ export async function collectFast(): Promise<FastResult> {
   ];
 
   let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
     const budget = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`[collectFast] 수집 예산 ${FAST_BUDGET_MS}ms 초과`)), FAST_BUDGET_MS);
+      timer = setTimeout(
+        () => reject(new Error(`[collectFast] 수집 예산 ${FAST_BUDGET_MS}ms 초과`)),
+        FAST_BUDGET_MS,
+      );
     });
+
     await Promise.race([runPool(tasks, FAST_CONCURRENCY), budget]);
   } finally {
     clearTimeout(timer);
   }
+
   return { ...normalizeRaw(raw), missing };
+}
+
+export async function collectTourismFast(): Promise<{
+  items: RawTourItem[];
+  stats: NormalizeStats;
+}> {
+  if (isMockMode()) return normalizeRaw(MOCK_RAW_ITEMS);
+
+  const raw: RawTourItem[] = [];
+
+  for (const contentTypeId of MAP_CONTENT_TYPES) {
+    try {
+      const { items } = await areaBasedListPage(
+        contentTypeId,
+        1,
+        MAP_PAGE_SIZE,
+      );
+
+      raw.push(...items);
+    } catch (e) {
+      console.warn(
+        `[collectTourismFast] 콘텐츠 타입 ${contentTypeId} 수집 실패:`,
+        e instanceof Error ? e.message : e,
+      );
+    }
+
+    await sleep(POLITENESS_MS);
+  }
+
+  return normalizeRaw(raw);
 }

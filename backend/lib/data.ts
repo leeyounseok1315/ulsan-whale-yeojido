@@ -4,13 +4,19 @@ import { detailIntro } from "./tourapi";
 import { extractIntro } from "./introFields";
 import { parseOpening } from "./operating";
 import { cached, redisAvailable, redisCommand, setCache } from "./cache";
-import { collectAndNormalize, collectFast, isMockMode } from "./collect";
+import {
+  collectAndNormalize,
+  collectFast,
+  collectTourismFast,
+  isMockMode,
+} from "./collect";
 import { recordBatch } from "./metrics";
 
 // BFF 데이터 서비스 레이어 — 캐시 우선 조회 → 미스 시 수집 파이프라인 → 테마 태깅.
 // app/api(BFF)에서만 import. 캐시 키 버저닝으로 큐레이션 변경을 반영한다.
 
 const CACHE_KEY = "spots:all"; // 버전은 cache의 CACHE_VERSION 프리픽스가 담당
+const TOURISM_CACHE_KEY = "spots:tourism";
 const CACHE_TAG = "spots"; // 태그 퍼지 대상 (큐레이션 변경 시 purgeTag("spots"))
 const TTL_MS = 1000 * 60 * 30; // 30분 fresh (이후 SWR stale 구간에서 백그라운드 갱신)
 
@@ -22,6 +28,20 @@ function buildSpots(items: RawTourItem[]): WhaleSpot[] {
     .filter((s) => s.contentTypeId !== "25")
     .filter((s) => s.isWhaleThemed)
     .sort((a, b) => Number(b.isCore) - Number(a.isCore) || b.relevance - a.relevance);
+}
+
+/** 울산 전체 관광지도용 스팟 — 고래 여부와 관계없이 관광형 콘텐츠를 유지한다. */
+function buildTourismSpots(items: RawTourItem[]): WhaleSpot[] {
+  return items
+    .map(toWhaleSpot)
+    .filter((s) => s.contentTypeId !== "25")
+    .filter((s) => s.lat !== 0 && s.lon !== 0)
+    .sort(
+      (a, b) =>
+        Number(b.isCore) - Number(a.isCore) ||
+        b.relevance - a.relevance ||
+        a.title.localeCompare(b.title),
+    );
 }
 
 /**
@@ -94,10 +114,31 @@ export async function getSpots(): Promise<WhaleSpot[]> {
   return (await cached(CACHE_KEY, TTL_MS, produceFast, { tags: [CACHE_TAG] })).map(attachSeasonRules);
 }
 
-export async function getSpot(id: string): Promise<WhaleSpot | null> {
-  return (await getSpots()).find((s) => s.id === id) ?? null;
+async function produceTourismFast(): Promise<WhaleSpot[]> {
+  const { items } = await collectTourismFast();
+  return assertComplete(buildTourismSpots(items));
 }
 
+export async function getTourismSpots(): Promise<WhaleSpot[]> {
+  return (
+    await cached(
+      TOURISM_CACHE_KEY,
+      TTL_MS,
+      produceTourismFast,
+      { tags: [CACHE_TAG] },
+    )
+  ).map(attachSeasonRules);
+}
+
+export async function getSpot(id: string): Promise<WhaleSpot | null> {
+  const whaleSpot = (await getSpots()).find((s) => s.id === id);
+
+  if (whaleSpot) {
+    return whaleSpot;
+  }
+
+  return (await getTourismSpots()).find((s) => s.id === id) ?? null;
+}
 // 배치 중복 실행 방지 (W9) — Cron과 수동 트리거가 겹치면 전수 수집이 두 번 돌아
 // TourAPI 일일 쿼터를 두 배로 태우고, 서로의 결과를 덮어쓴다.
 // Redis가 있으면 인스턴스 간 락(SET NX EX), 없으면 프로세스 내 플래그로 최소 방어.

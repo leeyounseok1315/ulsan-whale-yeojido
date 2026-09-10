@@ -2,6 +2,7 @@ import {
   CONTENT_TYPE_LABEL,
   type EventPeriod,
   type RawTourItem,
+  type SpotCategory,
   type WhaleSpot,
   type WhaleThemeId,
 } from "./types";
@@ -69,6 +70,41 @@ function inferTheme(text: string): WhaleThemeId {
   return "culture";
 }
 
+/** 일반 울산 관광 분류 — 고래 연관도와 독립적으로 판단한다. */
+function inferCategory(text: string, contentTypeId: string): SpotCategory {
+  if (contentTypeId === "39") return "food";
+  if (contentTypeId === "32") return "lodging";
+  if (contentTypeId === "15") return "festival";
+
+  if (/암각화|유적|유산|성곽|사찰|고분|역사/.test(text)) {
+    return "heritage";
+  }
+
+  if (
+    /태화강|영남알프스|신불산|간월산|가지산|고헌산|문수산|무룡산|정원|공원|숲|대숲|수목원|해수욕장|해변|바다|간절곶|대왕암|폭포|계곡/.test(
+      text,
+    )
+  ) {
+    return "nature";
+  }
+
+  if (
+    contentTypeId === "28" ||
+    /체험|모노레일|케이블카|여행선|크루즈|레포츠|전망대|놀이|공방/.test(text)
+  ) {
+    return "experience";
+  }
+
+  if (
+    contentTypeId === "14" ||
+    /박물관|미술관|문화|기념관|전시/.test(text)
+  ) {
+    return "culture";
+  }
+
+  return "other";
+}
+
 /** 원시 응답 → 앱 표준 모델. 테마 태깅 · 공사 표기 sanitize · 핵심 스팟 화이트리스트 적용. */
 export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
   const id = raw.contentid;
@@ -82,6 +118,7 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
     id,
     title: sanitize(raw.title),
     theme,
+    category: inferCategory(text, raw.contenttypeid),
     contentTypeId: raw.contenttypeid,
     contentTypeLabel: CONTENT_TYPE_LABEL[raw.contenttypeid] ?? "관광",
     address: sanitize(raw.addr1 ?? ""),
