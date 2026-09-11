@@ -130,6 +130,32 @@ export async function getTourismSpots(): Promise<WhaleSpot[]> {
   ).map(attachSeasonRules);
 }
 
+/**
+ * 추천용 후보군.
+ * 울산 전체 관광지를 기본으로 사용하되,
+ * 기존 고래 핵심 스팟의 보강된 운영정보가 있으면 그 데이터를 우선한다.
+ */
+export async function getRecommendationSpots(): Promise<WhaleSpot[]> {
+  const [tourismSpots, whaleSpots] = await Promise.all([
+    getTourismSpots(),
+    getSpots(),
+  ]);
+
+  const merged = new Map<string, WhaleSpot>();
+
+  // 울산 전체 관광지
+  for (const spot of tourismSpots) {
+    merged.set(spot.id, spot);
+  }
+
+  // 같은 장소가 있으면 운영정보가 보강된 고래 스팟 버전으로 교체
+  for (const spot of whaleSpots) {
+    merged.set(spot.id, spot);
+  }
+
+  return [...merged.values()];
+}
+
 export async function getSpot(id: string): Promise<WhaleSpot | null> {
   const whaleSpot = (await getSpots()).find((s) => s.id === id);
 

@@ -8,6 +8,7 @@ import type {
   Substitution,
   WhaleSpot,
   WhaleThemeId,
+  SpotCategory,
 } from "./types";
 import {
   CRUISE_SEASON,
@@ -33,6 +34,12 @@ const DWELL_MIN = 80; // 지점당 체류(분)
 const SPEED_KMH = 32; // 이동 평균 속도(도심 근사)
 const fmtTime = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const parseTimeMin = (value?: string): number | null => {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
 
 /**
  * 동행 유형별 테마 가중치 (v1 — 결과 차별화의 핵심).
@@ -48,10 +55,56 @@ const COMPANION_WEIGHT: Record<Companion, Record<WhaleThemeId, number>> = {
   solo: { heritage: 2.0, nature: 1.3, observe: 0.9, culture: 0.8 }, // 유산·사색 → 조용한 자연
 };
 
+const COMPANION_CATEGORY_WEIGHT: Record<
+  Companion,
+  Record<SpotCategory, number>
+> = {
+  family: {
+    nature: 1.2,
+    heritage: 1.1,
+    culture: 2.0,
+    experience: 1.8,
+    festival: 1.2,
+    food: 0.8,
+    lodging: 0.4,
+    other: 0.7,
+  },
+  couple: {
+    nature: 2.0,
+    heritage: 1.0,
+    culture: 1.4,
+    experience: 1.3,
+    festival: 1.2,
+    food: 1.0,
+    lodging: 0.4,
+    other: 0.7,
+  },
+  friends: {
+    nature: 1.3,
+    heritage: 0.9,
+    culture: 1.0,
+    experience: 2.0,
+    festival: 1.6,
+    food: 1.0,
+    lodging: 0.4,
+    other: 0.7,
+  },
+  solo: {
+    nature: 1.5,
+    heritage: 2.0,
+    culture: 1.5,
+    experience: 1.0,
+    festival: 0.9,
+    food: 0.8,
+    lodging: 0.4,
+    other: 0.8,
+  },
+};
+
 // 같은 테마가 코스를 독식하지 않도록 n번째 선택마다 감쇠(체감 효용).
 // 장생포 문화 4곳이 나란히 들어차던 문제를 푼다 — 테마 다양성이 곧 여행 만족도.
 // 0.40: 격자 탐색에서 차별화를 해치지 않으면서 코스당 테마 수를 2.25→2.5로 올린 값.
-const THEME_DIMINISH = 0.4;
+const CATEGORY_DIMINISH = 0.4;
 // 같은 지리 클러스터(반경 CLUSTER_KM) 반복 선택 감쇠. 장생포는 서비스의 심장이라
 // 배제가 아니라 '완만한' 감쇠로 둔다(과하면 고래 테마가 흐려진다 — 절대규칙 #3).
 const CLUSTER_DIMINISH = 0.15;
@@ -62,18 +115,31 @@ const CLUSTER_KM = 1.2;
 // 넘어설 수 있어야 한다. 0.8일 땐 이미 상위인 테마에 묻혀 결과가 안 바뀌는 조합이 있었다
 // (예: solo+nature — solo의 nature가 이미 2순위라 순서 불변).
 const INTEREST_WEIGHT = 1.3;
+const WHALE_THEME_FACTOR = 0.35;
 const PEAK_WEIGHT = 0.7; // 제철 스팟 가중(시즌 결합)
 // 그날 실제로 열리는 축제 가중 — 며칠뿐인 일회성이라 상시 스팟보다 우선한다.
 // (핵심 스팟 가중 +1을 넘겨, 당일 코스처럼 자리가 적을 때도 축제가 들어오도록)
 const EVENT_TODAY_WEIGHT = 1.4;
 const INTEREST_MATCH: Record<Interest, (s: WhaleSpot) => boolean> = {
-  history: (s) => s.theme === "heritage" || s.contentTypeId === "14",
-  nature: (s) => s.theme === "nature",
-  experience: (s) => /체험|마을|모노레일|둘레길|옛길/.test(s.title),
-  // 고래 관찰 — theme만 보면 이미 최상위인 크루즈만 걸려 순서가 안 바뀌었다.
-  // 실제로 고래를 '보는' 경험(회유해면·생태체험관·박물관 전시)까지 포함해야 선택이 달라진다.
-  observation: (s) => s.theme === "observe" || /생태체험|박물관|회유/.test(s.title),
-  food: (s) => s.contentTypeId === "39",
+  history: (s) =>
+    s.category === "heritage" ||
+    s.category === "culture",
+
+  nature: (s) =>
+    s.category === "nature",
+
+  experience: (s) =>
+    s.category === "experience" ||
+    /체험|모노레일|케이블카|여행선|크루즈|레포츠|공방/.test(s.title),
+
+  // 고래 관찰은 서비스 정체성과 직접 연결되므로 기존 whale theme도 유지
+  observation: (s) =>
+    s.theme === "observe" ||
+    /고래|생태체험|회유|여행선|크루즈/.test(s.title),
+
+  food: (s) =>
+    s.category === "food" ||
+    s.contentTypeId === "39",
 };
 
 function interestBonus(spot: WhaleSpot, interests: Interest[]): number {
@@ -101,30 +167,128 @@ const PEAK_LABEL_EN: Record<string, string> = {
 };
 const peakLabelL = (label: string, lang: Lang) => (lang === "en" ? PEAK_LABEL_EN[label] ?? label : label);
 
-function baseNoteFor(spot: WhaleSpot, companion: Companion, lang: Lang): string {
-  if (lang === "en") {
-    if (spot.seasonal) return "See through the whale's eyes at sea — check the sailing times in advance.";
+function baseNoteFor(
+  spot: WhaleSpot,
+  companion: Companion,
+  lang: Lang,
+): string {
+  // 고래바다여행선처럼 시즌 운영이 핵심인 장소
+  if (spot.seasonal) {
+    return lang === "en"
+      ? "See Ulsan from the sea through a whale's eyes — check the sailing times in advance."
+      : "바다 위에서 고래의 시선으로 울산을 만나보세요 — 운항 시간을 미리 확인하세요.";
+  }
+
+  // 실제 고래 연관 관광지는 고래여지도의 정체성을 살린다.
+  if (spot.isWhaleThemed) {
+      // 고래 테마이면서 체험형 관광지라면 실제 여행 활동을 강조한다.
+  if (spot.category === "experience") {
+    return lang === "en"
+      ? "Enjoy a hands-on experience while exploring Ulsan's whale-themed attractions."
+      : companion === "friends"
+        ? "친구들과 울산의 고래 테마를 직접 체험하며 즐기기 좋은 곳이에요."
+        : "울산의 고래 테마를 직접 체험하며 즐기기 좋은 곳이에요.";
+      }
+    if (lang === "en") {
+      switch (spot.theme) {
+        case "observe":
+          return "A special place to experience Ulsan's whale story up close.";
+
+        case "heritage":
+          return "Discover traces of whales and prehistoric life preserved in Ulsan.";
+
+        case "culture":
+          return companion === "family"
+            ? "A whale-themed cultural stop that's easy to enjoy with the family."
+            : "Explore the history and culture behind Ulsan's whale city.";
+
+        case "nature":
+          return "Enjoy Ulsan's scenery while following the story of the whale city.";
+      }
+    }
+
     switch (spot.theme) {
-      case "culture":
-        return companion === "family" ? "Whale stories to enjoy slowly with the kids." : "Walk through the history of whaling.";
+      case "observe":
+        return "울산의 고래 이야기를 가까이에서 체험해보기 좋은 곳이에요.";
+
       case "heritage":
-        return "Come face to face with a prehistoric record of whale hunting.";
+        return "울산에 남은 고래와 선사시대의 흔적을 만나보세요.";
+
+      case "culture":
+        return companion === "family"
+          ? "가족과 함께 고래 문화와 이야기를 즐기기 좋은 곳이에요."
+          : "울산 고래도시의 역사와 문화를 알아보기 좋은 곳이에요.";
+
       case "nature":
-        return companion === "couple" ? "Lovely for a walk around sunset." : "A pause in nature within the city.";
-      default:
-        return "A scene from the whale city.";
+        return "고래도시 울산의 이야기와 함께 자연 풍경을 즐겨보세요.";
     }
   }
-  if (spot.seasonal) return "바다 위에서 고래의 시선으로 — 운항 시간을 미리 확인하세요.";
-  switch (spot.theme) {
-    case "culture":
-      return companion === "family" ? "아이와 함께 고래 이야기를 천천히." : "포경의 역사를 따라 걷기.";
-    case "heritage":
-      return "선사시대 고래잡이의 기록을 마주하는 시간.";
+
+  // 일반 울산 관광지는 실제 관광 카테고리에 맞는 설명을 사용한다.
+  if (lang === "en") {
+    switch (spot.category) {
+      case "nature":
+        return companion === "couple"
+          ? "A scenic stop for a relaxed walk together."
+          : "A relaxing place to enjoy Ulsan's natural scenery.";
+
+      case "heritage":
+        return "Take time to explore the history and heritage of Ulsan.";
+
+      case "culture":
+        return companion === "family"
+          ? "A cultural stop with exhibitions and experiences for the family."
+          : "A good place to enjoy Ulsan's culture and exhibitions.";
+
+      case "experience":
+        return companion === "friends"
+          ? "A hands-on stop that's especially fun to enjoy with friends."
+          : "Add some activity to your trip with a hands-on experience.";
+
+      case "festival":
+        return "Enjoy a local event taking place during your trip.";
+
+      case "food":
+        return "Take a break and sample some of Ulsan's local flavors.";
+
+      case "lodging":
+        return "A convenient place to rest after your day of travel.";
+
+      default:
+        return "A worthwhile stop to add to your Ulsan itinerary.";
+    }
+  }
+
+  switch (spot.category) {
     case "nature":
-      return companion === "couple" ? "해질 무렵 산책하기 좋아요." : "도시를 품은 자연에서 쉼표.";
+      return companion === "couple"
+        ? "함께 풍경을 즐기며 여유롭게 걷기 좋은 곳이에요."
+        : "울산의 자연 풍경 속에서 쉬어가기 좋은 곳이에요.";
+
+    case "heritage":
+      return "울산에 남아 있는 역사와 유산을 천천히 살펴보세요.";
+
+    case "culture":
+      return companion === "family"
+        ? "가족과 함께 전시와 문화 체험을 즐기기 좋은 곳이에요."
+        : "울산의 문화와 전시를 즐겨보기 좋은 곳이에요.";
+
+    case "experience":
+      return companion === "friends"
+        ? "친구들과 직접 체험하며 즐기기 좋은 곳이에요."
+        : "직접 움직이고 체험하는 여행에 잘 어울리는 곳이에요.";
+
+    case "festival":
+      return "여행 날짜에 맞춰 울산의 지역 행사를 즐겨보세요.";
+
+    case "food":
+      return "울산의 먹거리를 맛보며 잠시 쉬어가기 좋아요.";
+
+    case "lodging":
+      return "하루 여행을 마무리하고 편하게 쉬기 좋은 곳이에요.";
+
     default:
-      return "고래 도시의 한 장면.";
+      return "울산 여행 코스에 함께 둘러보기 좋은 장소예요.";
   }
 }
 
@@ -196,33 +360,44 @@ export function buildCourse(
   const dropped = new Set([...closedSeasonal, ...closedEvent, ...closedByRest]);
   const pool = spots.filter((s) => !dropped.has(s));
 
-  // 기본 점수 — 스팟 자체의 매력(동행·관심사·시즌 반영). 선택 순서와 무관한 고정값.
-  const w = COMPANION_WEIGHT[companion];
-  const baseScore = (s: WhaleSpot) =>
-    (s.isCore ? 1 : 0.4) +
-    (w[s.theme] ?? 1) +
-    interestBonus(s, interests) +
-    (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) + // 제철 가중치(시즌 결합)
-    (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate) ? EVENT_TODAY_WEIGHT : 0) +
-    s.relevance;
+const themeW = COMPANION_WEIGHT[companion];
+const categoryW = COMPANION_CATEGORY_WEIGHT[companion];
 
+const baseScore = (s: WhaleSpot) =>
+  (s.isCore ? 1 : 0.4) +
+  (categoryW[s.category] ?? 0.7) +
+  (s.isWhaleThemed
+    ? (themeW[s.theme] ?? 1) * WHALE_THEME_FACTOR
+    : 0) +
+  interestBonus(s, interests) +
+  (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) +
+  (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate)
+    ? EVENT_TODAY_WEIGHT
+    : 0) +
+  s.relevance;
   /**
    * v1 선별 — 점수 상위 N개를 그냥 자르지 않고, 이미 고른 것과의 '다양성'을 반영해 하나씩 고른다.
-   * 같은 테마·같은 동네가 반복될수록 감쇠하므로 코스가 한쪽으로 쏠리지 않는다.
+   * 같은 관광 카테고리가 코스를 독식하지 않도록 n번째 선택마다 감쇠
    * (기존 slice 방식은 core+relevance가 동점인 장생포 문화 4곳이 자리를 독식했다)
    */
   const rank = (list: WhaleSpot[], limit: number): WhaleSpot[] => {
     const remaining = [...list];
     const picked: WhaleSpot[] = [];
-    const themeCount = new Map<WhaleThemeId, number>();
+    const categoryCount = new Map<SpotCategory, number>();
 
     while (picked.length < limit && remaining.length) {
       let bestIdx = 0;
       let bestVal = -Infinity;
       remaining.forEach((s, i) => {
-        const themeSeen = themeCount.get(s.theme) ?? 0;
-        const clusterSeen = picked.filter((p) => haversineKm(p, s) <= CLUSTER_KM).length;
-        const val = baseScore(s) - themeSeen * THEME_DIMINISH - clusterSeen * CLUSTER_DIMINISH;
+        const categorySeen = categoryCount.get(s.category) ?? 0;
+        const clusterSeen = picked.filter(
+          (p) => haversineKm(p, s) <= CLUSTER_KM,
+        ).length;
+
+      const val =
+      baseScore(s) -
+      categorySeen * CATEGORY_DIMINISH -
+      clusterSeen * CLUSTER_DIMINISH;
         // 동점이면 원본(연관도·핵심 우선 정렬) 순서를 유지 — 재현성 보장.
         if (val > bestVal) {
           bestVal = val;
@@ -231,7 +406,10 @@ export function buildCourse(
       });
       const [chosenSpot] = remaining.splice(bestIdx, 1);
       picked.push(chosenSpot);
-      themeCount.set(chosenSpot.theme, (themeCount.get(chosenSpot.theme) ?? 0) + 1);
+      categoryCount.set(
+        chosenSpot.category,
+        (categoryCount.get(chosenSpot.category) ?? 0) + 1,
+      );
     }
     return picked;
   };
@@ -249,12 +427,25 @@ export function buildCourse(
     const order = (i % STOPS_PER_DAY) + 1;
     let legKm = 0;
     if (order === 1) {
-      cur = DAY_START_MIN; // 하루 시작
+      cur = DAY_START_MIN;
     } else {
       legKm = Math.round(haversineKm(prev as WhaleSpot, spot) * 10) / 10;
-      cur = Math.min(cur + DWELL_MIN + Math.round((legKm / SPEED_KMH) * 60), 20 * 60);
+      cur = Math.min(
+        cur + DWELL_MIN + Math.round((legKm / SPEED_KMH) * 60),
+        20 * 60,
+      );
     }
-    prev = spot;
+
+// 운영 시작 전 도착하면 실제 오픈 시간까지 기다린 뒤 방문한다.
+if (!spot.opening?.alwaysOpenHours) {
+  const openMin = parseTimeMin(spot.opening?.open);
+
+  if (openMin !== null && cur < openMin) {
+    cur = openMin;
+  }
+}
+
+prev = spot;
     return {
       spot,
       day,
@@ -323,11 +514,23 @@ export function buildCourse(
   // 기준일에 열리지 않는 축제는 코스에 넣지 않았다는 사실을 알린다(개최기간을 알 때만).
   for (const ev of closedEvent) {
     if (!ev.eventPeriod) continue;
-    seasonNotes.push(
-      en
-        ? `${ev.title} isn't running on this date, so we left it out (last held ${fmtEventPeriod(ev.eventPeriod)}).`
+    
+    const refYmd = onDate.replaceAll("-", "");
+    const isUpcoming = ev.eventPeriod.start > refYmd;
+    
+    if (en) {
+      seasonNotes.push(
+        isUpcoming
+        ? `${ev.title} isn't running on this date, so we left it out (scheduled ${fmtEventPeriod(ev.eventPeriod)}).`
+        : `${ev.title} isn't running on this date, so we left it out (last held ${fmtEventPeriod(ev.eventPeriod)}).`,
+      );
+    } else {
+      seasonNotes.push(
+        isUpcoming
+        ? `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (개최 예정 ${fmtEventPeriod(ev.eventPeriod)}).`
         : `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
-    );
+      );
+    }
   }
 
   // 정기 휴무로 뺀 곳 안내 (W7) — 한 줄로 묶는다. 대부분 같은 요일(기준일) 휴무라 한 문장이면 충분.

@@ -10,9 +10,24 @@ import { ChromeLink, ArrowBadge } from "@/frontend/components/chrome/ChromeButto
 // 사진 대신 여지도 필드 위 박스아트 워드마크 + 반구대 고래 마스코트. 닌텐도 IP 미사용.
 
 const MODULES = [
-  { label: "여지도 지도", desc: "장생포·반구대를 잇는 고래 스팟을 옛 지도 위에 핀으로.", href: "/map", cta: "펼치기" },
-  { label: "코스 추천", desc: "동행·기간·관심사에 맞춰 하루~2박3일 코스를 그려 줍니다.", href: "/recommend", cta: "추천받기" },
-  { label: "시즌·운영 반영", desc: "고래바다여행선 운항기·휴관일까지 반영한 실행 가능한 코스.", href: "/recommend", cta: "확인" },
+  {
+    label: "여지도 지도",
+    desc: "울산 관광지와 고래의 길을 지도 위에서 탐색해요.",
+    href: "/map",
+    cta: "펼치기",
+  },
+  {
+    label: "맞춤 코스 추천",
+    desc: "동행·기간·관심사에 맞춰 하루~2박3일 여행 코스를 추천해요.",
+    href: "/recommend",
+    cta: "추천받기",
+  },
+  {
+    label: "실시간 여행 조건 반영",
+    desc: "운영시간·휴무일·축제 기간·계절 정보를 추천 코스에 자동으로 반영해요.",
+    href: null,
+    cta: null,
+  },
 ];
 
 export default function Landing() {
@@ -74,13 +89,19 @@ export default function Landing() {
               <Plate key={m.label} tone="surface" className="flex flex-col p-3">
                 <span className="wy-legend text-[11px] text-[color:var(--color-chrome)]">{m.label}</span>
                 <p className="mt-1.5 flex-1 text-[12px] leading-relaxed text-ink">{m.desc}</p>
-                <Link
-                  href={m.href}
-                  className="mt-2.5 inline-flex items-center gap-1.5 self-start text-[12px] font-bold text-[color:var(--color-chrome)] hover:text-signal"
-                >
-                  <ArrowBadge size={20} />
-                  {m.cta}
-                </Link>
+                {m.href && m.cta ? (
+                  <Link
+                    href={m.href}
+                    className="mt-2.5 inline-flex items-center gap-1.5 self-start text-[12px] font-bold text-[color:var(--color-chrome)] hover:text-signal"
+                  >
+                    <ArrowBadge size={20} />
+                    {m.cta}
+                  </Link>
+                ) : (
+                  <span className="mt-2.5 inline-flex items-center gap-1.5 self-start text-[11px] font-bold text-carbon/60">
+                    추천 시 자동 적용
+                  </span>
+                )}
               </Plate>
             ))}
           </div>
@@ -99,3 +120,4 @@ export default function Landing() {
     </main>
   );
 }
+

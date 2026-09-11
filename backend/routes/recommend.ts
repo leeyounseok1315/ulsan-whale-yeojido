@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSpots } from "@/backend/lib/data";
+import { getRecommendationSpots } from "@/backend/lib/data";
 import { buildCourse } from "@/backend/lib/recommend";
 import { isValidRefDate, resolveRefDate } from "@/backend/lib/season";
 import { cached } from "@/backend/lib/cache";
@@ -52,11 +52,13 @@ export async function GET(req: NextRequest) {
 
   // 재현성·캐싱 (W7): 같은 입력이면 같은 코스. 'spots' 태그로 묶어 재수집·퍼지 때 함께 무효화.
   const course = await cached(
-    `course:${comp}:${dur}:${interests.join("+")}:${effDate}:${lang}`,
+    `course:v6:${comp}:${dur}:${interests.join("+")}:${effDate}:${lang}`,
     COURSE_TTL_MS,
     async () => {
       // 코스 안내 문구가 스팟 이름을 인용하므로, 지역화된 스팟으로 코스를 짠다.
-      const spots = (await getSpots()).map((s) => localizeSpot(s, lang));
+      const spots = (await getRecommendationSpots()).map((s) => 
+        localizeSpot(s, lang),
+    );
       return buildCourse(spots, comp, dur, interests, effDate, lang);
     },
     { tags: ["spots"] },

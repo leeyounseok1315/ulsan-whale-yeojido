@@ -71,35 +71,56 @@ function inferTheme(text: string): WhaleThemeId {
 }
 
 /** 일반 울산 관광 분류 — 고래 연관도와 독립적으로 판단한다. */
-function inferCategory(text: string, contentTypeId: string): SpotCategory {
+function inferCategory(
+  title: string,
+  overview: string,
+  contentTypeId: string,
+): SpotCategory {
+  const text = `${title} ${overview}`;
+
+  // 콘텐츠 타입 자체가 명확한 경우 가장 먼저 분류한다.
   if (contentTypeId === "39") return "food";
   if (contentTypeId === "32") return "lodging";
   if (contentTypeId === "15") return "festival";
+  if (contentTypeId === "28") return "experience";
+  if (contentTypeId === "14") return "culture";
 
-  if (/암각화|유적|유산|성곽|사찰|고분|역사/.test(text)) {
+  // 관광지(12) 등은 제목을 우선해서 판단한다.
+  if (
+    /암각화|반구대|각석|유적|유산|성곽|왜성|사찰|고분|서원|향교/.test(
+      title,
+    )
+  ) {
     return "heritage";
   }
 
   if (
-    /태화강|영남알프스|신불산|간월산|가지산|고헌산|문수산|무룡산|정원|공원|숲|대숲|수목원|해수욕장|해변|바다|간절곶|대왕암|폭포|계곡/.test(
-      text,
+    /태화강|영남알프스|신불산|간월산|가지산|고헌산|문수산|무룡산|대운산|정원|공원|숲|대숲|수목원|해수욕장|해변|간절곶|대왕암|폭포|계곡/.test(
+      title,
     )
   ) {
     return "nature";
   }
 
   if (
-    contentTypeId === "28" ||
-    /체험|모노레일|케이블카|여행선|크루즈|레포츠|전망대|놀이|공방/.test(text)
+    /체험|모노레일|케이블카|여행선|크루즈|레포츠|전망대|놀이|공방|둘레길|옛길/.test(
+      title,
+    )
   ) {
     return "experience";
   }
 
-  if (
-    contentTypeId === "14" ||
-    /박물관|미술관|문화|기념관|전시/.test(text)
-  ) {
+  if (/박물관|미술관|문화관|기념관|전시관|생태체험관/.test(title)) {
     return "culture";
+  }
+
+  // 제목만으로 판단하기 어려운 경우에만 상세설명을 보조적으로 사용한다.
+  if (/암각화|유적|세계유산|성곽|고분/.test(text)) {
+    return "heritage";
+  }
+
+  if (/자연경관|해수욕장|계곡|폭포|수목원|대숲/.test(text)) {
+    return "nature";
   }
 
   return "other";
@@ -118,7 +139,11 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
     id,
     title: sanitize(raw.title),
     theme,
-    category: inferCategory(text, raw.contenttypeid),
+   category: inferCategory(
+    raw.title,
+    raw.overview ?? "",
+    raw.contenttypeid,
+  ),
     contentTypeId: raw.contenttypeid,
     contentTypeLabel: CONTENT_TYPE_LABEL[raw.contenttypeid] ?? "관광",
     address: sanitize(raw.addr1 ?? ""),
