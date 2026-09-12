@@ -16,7 +16,7 @@ import { recordBatch } from "./metrics";
 // app/api(BFF)에서만 import. 캐시 키 버저닝으로 큐레이션 변경을 반영한다.
 
 const CACHE_KEY = "spots:all"; // 버전은 cache의 CACHE_VERSION 프리픽스가 담당
-const TOURISM_CACHE_KEY = "spots:tourism";
+const TOURISM_CACHE_KEY = "spots:tourism:v2";
 const CACHE_TAG = "spots"; // 태그 퍼지 대상 (큐레이션 변경 시 purgeTag("spots"))
 const TTL_MS = 1000 * 60 * 30; // 30분 fresh (이후 SWR stale 구간에서 백그라운드 갱신)
 

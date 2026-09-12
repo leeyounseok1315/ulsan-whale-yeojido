@@ -15,6 +15,7 @@ export interface RawTourItem {
   firstimage?: string;
   firstimage2?: string;
   tel?: string;
+  cat3?: string;
   overview?: string;
   // detailCommon2 / detailIntro2 로 보강되는 필드
   usetime?: string;
@@ -73,6 +74,7 @@ export interface WhaleSpot {
   theme: WhaleThemeId;
   category: SpotCategory;
   contentTypeId: string;
+  cat3?: string; // TourAPI 세부분류. 카페(A05020900) 구분 등에 사용
   contentTypeLabel: string;
   address: string;
   lon: number; // mapx
@@ -100,6 +102,29 @@ export interface SpotDetail {
 export type Companion = "family" | "couple" | "friends" | "solo";
 export type Duration = "day" | "1n2d" | "2n3d";
 export type Interest = "history" | "nature" | "experience" | "observation" | "food";
+export type CourseTheme =
+  | "whale"
+  | "signature"
+  | "nature"
+  | "food"
+  | "experience";
+
+export const COURSE_THEME_LABEL: Record<CourseTheme, string> = {
+  whale: "🐋 고래 중심",
+  signature: "⭐ 울산 대표",
+  nature: "🌿 자연·힐링",
+  food: "☕ 미식·카페",
+  experience: "🎡 체험·액티비티",
+};
+
+export const COURSE_THEMES: CourseTheme[] = [
+  "whale",
+  "signature",
+  "nature",
+  "food",
+  "experience",
+];
+
 export const COMPANION_LABEL: Record<Companion, string> = {
   family: "가족",
   couple: "연인",
@@ -179,12 +204,18 @@ export interface NearbySpot {
   tel: string | null;
 }
 
+export type TransportMode = "walk" | "bus" | "taxi";
+
 export interface CourseStop {
   spot: WhaleSpot;
   day: number;
   order: number;
   arrive: string; // "10:00" — 이동시간 반영 계산
+
   legKm: number; // 같은 날 직전 지점에서의 이동 거리(km). 하루 첫 지점은 0.
+  travelMin: number; // 예상 이동시간(분). 하루 첫 지점은 0.
+  transportMode?: TransportMode; // 추천 이동수단. 하루 첫 지점은 없음.
+
   isPeak: boolean; // 기준 날짜 기준 제철인지
   openHours?: string; // 운영시간 라벨(예: "09:00~18:00", "상시 개방") — W7
   nearby?: NearbySpot[]; // 주변 먹거리·숙박(W8) — ?nearby= 요청 시에만 채움
@@ -192,6 +223,7 @@ export interface CourseStop {
 }
 
 export interface Course {
+  theme: CourseTheme;
   companion: Companion;
   duration: Duration;
   interests: Interest[];

@@ -5,14 +5,17 @@ import { localizeNearby, resolveLang, sourceLabel } from "@/backend/lib/i18n";
 
 // GET /api/nearby?spotId=128202&type=food&radius=2000&limit=6&lang=en
 //   또는 좌표 직접: ?lon=129.29&lat=35.55&type=lodging
-// 스팟 주변 먹거리·숙박 큐레이션 (W8) — locationBasedList2, 거리순.
+// 스팟 주변 먹거리·카페·숙박 큐레이션 (W8) — locationBasedList2, 거리순.
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const type = sp.get("type") ?? "food";
   const lang = resolveLang(sp.get("lang"));
 
   if (!isNearbyType(type)) {
-    return NextResponse.json({ error: "type은 food·lodging·tour 중 하나여야 해요." }, { status: 400 });
+    return NextResponse.json(
+      { error: "type은 food·cafe·lodging·tour 중 하나여야 해요." },
+      { status: 400 },
+    );
   }
 
   // 좌표 확정: spotId가 있으면 스팟 좌표를, 없으면 lon/lat 직접.

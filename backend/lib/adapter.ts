@@ -139,12 +139,13 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
     id,
     title: sanitize(raw.title),
     theme,
-   category: inferCategory(
-    raw.title,
-    raw.overview ?? "",
-    raw.contenttypeid,
-  ),
+    category: inferCategory(
+      raw.title,
+      raw.overview ?? "",
+      raw.contenttypeid,
+    ),
     contentTypeId: raw.contenttypeid,
+    cat3: raw.cat3,
     contentTypeLabel: CONTENT_TYPE_LABEL[raw.contenttypeid] ?? "관광",
     address: sanitize(raw.addr1 ?? ""),
     lon: Number(raw.mapx ?? 0),

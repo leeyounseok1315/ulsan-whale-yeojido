@@ -5,7 +5,14 @@ import { isValidRefDate, resolveRefDate } from "@/backend/lib/season";
 import { cached } from "@/backend/lib/cache";
 import { getNearby, isNearbyType } from "@/backend/lib/nearby";
 import { localizeNearby, localizeSpot, resolveLang, sourceLabel } from "@/backend/lib/i18n";
-import { INTERESTS, type Companion, type Duration, type Interest } from "@/backend/lib/types";
+import {
+  COURSE_THEMES,
+  INTERESTS,
+  type Companion,
+  type CourseTheme,
+  type Duration,
+  type Interest,
+} from "@/backend/lib/types";
 
 const COMPANIONS: Companion[] = ["family", "couple", "friends", "solo"];
 const DURATIONS: Duration[] = ["day", "1n2d", "2n3d"];
@@ -17,7 +24,20 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const companion = sp.get("companion");
   const duration = sp.get("duration");
+  const themeParam = sp.get("theme");
   const date = sp.get("date");
+  // 재추천 — 이전 코스에서 이미 보여준 관광지 id.
+  // 같은 조건으로 다른 코스를 요청할 때 해당 스팟들을 우선 제외한다.
+  const excludedIds = [
+    ...new Set(
+      (sp.get("exclude") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 30).sort();
+
+  const excludedSet = new Set(excludedIds);
 
   // 파라미터가 '있는데 값이 유효하지 않으면' 400 — 빈 문자열도 포함한다.
   // (과거엔 빈 문자열이 falsy라 검증을 통과한 뒤 ?? 기본값도 비켜가:
@@ -27,6 +47,12 @@ export async function GET(req: NextRequest) {
   }
   if (duration !== null && !DURATIONS.includes(duration as Duration)) {
     return NextResponse.json({ error: "체류 기간이 올바르지 않아요." }, { status: 400 });
+  }
+  if (themeParam !== null && !COURSE_THEMES.includes(themeParam as CourseTheme)) {
+    return NextResponse.json(
+      { error: "여행 테마가 올바르지 않아요." },
+      { status: 400 },
+    );
   }
   if (date !== null && !isValidRefDate(date)) {
     return NextResponse.json(
@@ -47,24 +73,36 @@ export async function GET(req: NextRequest) {
 
   const comp = (companion as Companion | null) ?? "family";
   const dur = (duration as Duration | null) ?? "day";
+  const courseTheme = (themeParam as CourseTheme | null) ?? "whale";
   const lang = resolveLang(sp.get("lang"));
   const effDate = resolveRefDate(date ?? undefined); // 없으면 오늘 — 키에 실제 날짜를 박아 자정 넘어가도 안전
 
   // 재현성·캐싱 (W7): 같은 입력이면 같은 코스. 'spots' 태그로 묶어 재수집·퍼지 때 함께 무효화.
   const course = await cached(
-    `course:v6:${comp}:${dur}:${interests.join("+")}:${effDate}:${lang}`,
+    `course:v13:${courseTheme}:${comp}:${dur}:${interests.join("+")}:${effDate}:${lang}:exclude=${excludedIds.join("+")}`,
     COURSE_TTL_MS,
     async () => {
       // 코스 안내 문구가 스팟 이름을 인용하므로, 지역화된 스팟으로 코스를 짠다.
-      const spots = (await getRecommendationSpots()).map((s) => 
+      const allSpots = (await getRecommendationSpots()).map((s) =>
         localizeSpot(s, lang),
-    );
-      return buildCourse(spots, comp, dur, interests, effDate, lang);
+      );
+
+      const spots = allSpots.filter((s) => !excludedSet.has(s.id));
+
+      return buildCourse(
+        spots,
+        comp,
+        dur,
+        interests,
+        effDate,
+        lang,
+        courseTheme,
+      );
     },
     { tags: ["spots"] },
   );
 
-  // 주변 연계 옵션 (W8) — ?nearby=food|lodging|tour. 엔진(buildCourse)은 손대지 않고
+  // 주변 연계 옵션 (W8) — ?nearby=food|cafe|lodging|tour. 엔진(buildCourse)은 손대지 않고
   // 라우트 후처리로 스톱마다 주변을 붙인다(캐시된 코스는 불변 유지 → 새 객체로 복제).
   const nearbyType = req.nextUrl.searchParams.get("nearby");
   if (isNearbyType(nearbyType)) {

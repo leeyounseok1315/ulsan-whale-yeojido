@@ -77,6 +77,12 @@ export function SpotVisit({
     staleTime: 5 * 60_000,
     retry: 1,
   });
+  const { data: cafe } = useQuery({
+    queryKey: ["nearby", spot.id, "cafe"],
+    queryFn: () => fetchNearby(spot.id, "cafe"),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
   const { data: lodging } = useQuery({
     queryKey: ["nearby", spot.id, "lodging"],
     queryFn: () => fetchNearby(spot.id, "lodging"),
@@ -112,6 +118,7 @@ export function SpotVisit({
   }, []);
 
   const nearbyFood = food ?? [];
+  const nearbyCafe = cafe ?? [];
   const nearbyLodge = lodging ?? [];
   const tone = themeColor(spot.theme);
 
@@ -233,11 +240,12 @@ export function SpotVisit({
           {isLoading && <p className="mt-2 px-1 text-[11px] text-white/70">그 장소 정보를 불러오는 중…</p>}
 
           {/* 주변 — 이 자리에서 가까운 곳 */}
-          {(nearbyFood.length > 0 || nearbyLodge.length > 0) && (
+          {(nearbyFood.length > 0 || nearbyCafe.length > 0 || nearbyLodge.length > 0) && (
             <div className="mt-3">
-              <SectionLabelBar title="이 근처 · 걸어서" />
+              <SectionLabelBar title="이 근처" />
               <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
                 {nearbyFood.length > 0 && <NearbyGroup label="먹거리" items={nearbyFood} />}
+                {nearbyCafe.length > 0 && <NearbyGroup label="카페" items={nearbyCafe} />}
                 {nearbyLodge.length > 0 && <NearbyGroup label="숙박" items={nearbyLodge} />}
               </div>
             </div>

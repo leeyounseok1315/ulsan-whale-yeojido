@@ -9,6 +9,8 @@ import type {
   WhaleSpot,
   WhaleThemeId,
   SpotCategory,
+  TransportMode,
+  CourseTheme,
 } from "./types";
 import {
   CRUISE_SEASON,
@@ -30,8 +32,10 @@ import { type Lang, monthRangeLabel, weekdayName } from "./i18n";
 const DAYS: Record<Duration, number> = { day: 1, "1n2d": 2, "2n3d": 3 };
 const STOPS_PER_DAY = 3;
 const DAY_START_MIN = 10 * 60; // 하루 시작 10:00
-const DWELL_MIN = 80; // 지점당 체류(분)
-const SPEED_KMH = 32; // 이동 평균 속도(도심 근사)
+const DWELL_MIN = 80;
+const WALK_MAX_KM = 1.2;
+const WALK_SPEED_KMH = 4.5;
+const TAXI_SPEED_KMH = 32;
 const fmtTime = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const parseTimeMin = (value?: string): number | null => {
@@ -109,6 +113,10 @@ const CATEGORY_DIMINISH = 0.4;
 // 배제가 아니라 '완만한' 감쇠로 둔다(과하면 고래 테마가 흐려진다 — 절대규칙 #3).
 const CLUSTER_DIMINISH = 0.15;
 const CLUSTER_KM = 1.2;
+// 하루 코스 안에서 지나치게 먼 장소가 선택되는 것을 완만하게 억제한다.
+// 완전 제외가 아니라 감점 방식이라 중요한 관광지는 여전히 선택될 수 있다.
+const DAY_COMFORT_KM = 12;
+const FAR_DISTANCE_PENALTY = 0.08;
 
 // 관심사 매칭 규칙 + 가중치 (선택한 관심사에 부합하는 스팟을 상위로).
 // v1: 0.8 → 1.3. 관심사는 사용자가 '명시적으로 고른' 신호라 동행 테마 선호(폭 1.4)를
@@ -148,6 +156,60 @@ function interestBonus(spot: WhaleSpot, interests: Interest[]): number {
   return b;
 }
 
+const COURSE_THEME_WEIGHT = 1.8;
+const CAFE_CAT3 = "A05020900";
+
+const isFoodSpot = (spot: WhaleSpot) =>
+  spot.category === "food" || spot.contentTypeId === "39";
+
+const isCafeSpot = (spot: WhaleSpot) =>
+  spot.contentTypeId === "39" && spot.cat3 === CAFE_CAT3;
+
+function courseThemeBonus(
+  spot: WhaleSpot,
+  theme: CourseTheme,
+): number {
+  switch (theme) {
+    case "whale":
+      return spot.isWhaleThemed
+        ? COURSE_THEME_WEIGHT + (spot.isCore ? 0.6 : 0)
+        : 0;
+
+    case "signature":
+      if (spot.isCore) return 1.2;
+
+      if (
+        spot.category === "nature" ||
+        spot.category === "heritage" ||
+        spot.category === "culture" ||
+        spot.category === "experience"
+      ) {
+        return 0.9;
+      }
+
+      return 0;
+
+    case "nature":
+      return spot.category === "nature"
+        ? COURSE_THEME_WEIGHT
+        : 0;
+
+    case "food":
+      if (isCafeSpot(spot)) {
+        return COURSE_THEME_WEIGHT + 1.2;
+      }
+
+      return isFoodSpot(spot)
+        ? COURSE_THEME_WEIGHT + 0.4
+        : 0;
+    case "experience":
+      return spot.category === "experience" ||
+        /체험|모노레일|케이블카|여행선|크루즈|레포츠|공방/.test(spot.title)
+        ? COURSE_THEME_WEIGHT
+        : 0;
+  }
+}
+
 // 한국어 조사 — 받침 유무로 은/는·을/를 선택(스팟 이름이 들어가는 안내 문구용).
 function hasFinalConsonant(word: string): boolean {
   const code = word.trim().slice(-1).charCodeAt(0);
@@ -181,14 +243,14 @@ function baseNoteFor(
 
   // 실제 고래 연관 관광지는 고래여지도의 정체성을 살린다.
   if (spot.isWhaleThemed) {
-      // 고래 테마이면서 체험형 관광지라면 실제 여행 활동을 강조한다.
-  if (spot.category === "experience") {
-    return lang === "en"
-      ? "Enjoy a hands-on experience while exploring Ulsan's whale-themed attractions."
-      : companion === "friends"
-        ? "친구들과 울산의 고래 테마를 직접 체험하며 즐기기 좋은 곳이에요."
-        : "울산의 고래 테마를 직접 체험하며 즐기기 좋은 곳이에요.";
-      }
+    // 고래 테마이면서 체험형 관광지라면 실제 여행 활동을 강조한다.
+    if (spot.category === "experience") {
+      return lang === "en"
+        ? "Enjoy a hands-on experience while exploring Ulsan's whale-themed attractions."
+        : companion === "friends"
+          ? "친구들과 울산의 고래 테마를 직접 체험하며 즐기기 좋은 곳이에요."
+          : "울산의 고래 테마를 직접 체험하며 즐기기 좋은 곳이에요.";
+    }
     if (lang === "en") {
       switch (spot.theme) {
         case "observe":
@@ -309,6 +371,29 @@ function haversineKm(a: WhaleSpot, b: WhaleSpot): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+function estimateTravel(distanceKm: number): {
+  travelMin: number;
+  transportMode: TransportMode;
+} {
+  const transportMode: TransportMode =
+    distanceKm <= WALK_MAX_KM ? "walk" : "taxi";
+
+  const speed =
+    transportMode === "walk"
+      ? WALK_SPEED_KMH
+      : TAXI_SPEED_KMH;
+  const travelMin = Math.max(
+    1,
+    Math.round((distanceKm / speed) * 60),
+  );
+
+  return {
+    travelMin,
+    transportMode,
+  };
+}
+
+
 // 선택된 스팟을 최근접 이웃으로 순서화(지그재그 최소화). 시작은 최고 점수 스팟.
 function orderByRoute(spots: WhaleSpot[]): WhaleSpot[] {
   if (spots.length <= 2) return spots;
@@ -330,10 +415,100 @@ function orderByRoute(spots: WhaleSpot[]): WhaleSpot[] {
   return route;
 }
 
-function totalDistanceKm(spots: WhaleSpot[]): number {
-  let d = 0;
-  for (let i = 1; i < spots.length; i++) d += haversineKm(spots[i - 1], spots[i]);
-  return Math.round(d * 10) / 10;
+function permutations<T>(items: T[]): T[][] {
+  if (items.length <= 1) return [items];
+
+  return items.flatMap((item, index) => {
+    const rest = [...items.slice(0, index), ...items.slice(index + 1)];
+
+    return permutations(rest).map((perm) => [item, ...perm]);
+  });
+}
+
+function evaluateDayRoute(route: WhaleSpot[]) {
+  let cur = DAY_START_MIN;
+  let prev: WhaleSpot | null = null;
+
+  let waitMin = 0;
+  let closedCount = 0;
+  let distanceKm = 0;
+
+  for (const spot of route) {
+    if (prev) {
+      const legKm = haversineKm(prev, spot);
+      const { travelMin } = estimateTravel(legKm);
+
+      distanceKm += legKm;
+      cur += DWELL_MIN + travelMin;
+    }
+
+    // 운영 시작 전이면 기다린 시간을 기록한다.
+    if (!spot.opening?.alwaysOpenHours) {
+      const openMin = parseTimeMin(spot.opening?.open);
+
+      if (openMin !== null && cur < openMin) {
+        waitMin += openMin - cur;
+        cur = openMin;
+      }
+    }
+
+    // 도착했을 때 이미 마감했다면 이 순서에 큰 불이익을 준다.
+    if (closedByArrival(spot.opening, fmtTime(cur))) {
+      closedCount += 1;
+    }
+
+    prev = spot;
+  }
+
+  return {
+    waitMin,
+    closedCount,
+    distanceKm,
+    finishMin: cur,
+  };
+}
+
+function optimizeDayOrder(spots: WhaleSpot[]): WhaleSpot[] {
+  if (spots.length <= 1) return spots;
+
+  const candidates = permutations(spots);
+
+  candidates.sort((a, b) => {
+    const aa = evaluateDayRoute(a);
+    const bb = evaluateDayRoute(b);
+
+    // 1. 문 닫은 뒤 도착하는 일정은 최우선으로 피한다.
+    if (aa.closedCount !== bb.closedCount) {
+      return aa.closedCount - bb.closedCount;
+    }
+
+    // 2. 이동 + 대기를 모두 포함해 하루 일정이 더 자연스럽게 끝나는 순서를 우선한다.
+    if (aa.finishMin !== bb.finishMin) {
+      return aa.finishMin - bb.finishMin;
+    }
+
+    // 3. 종료시각이 같다면 이동거리가 짧은 코스를 선택한다.
+    if (aa.distanceKm !== bb.distanceKm) {
+      return aa.distanceKm - bb.distanceKm;
+    }
+
+    // 4. 그래도 같으면 대기시간이 짧은 쪽.
+    return aa.waitMin - bb.waitMin;
+  });
+
+  return candidates[0];
+}
+
+function totalDistanceKmByDay(dayRoutes: WhaleSpot[][]): number {
+  let distance = 0;
+
+  for (const route of dayRoutes) {
+    for (let i = 1; i < route.length; i++) {
+      distance += haversineKm(route[i - 1], route[i]);
+    }
+  }
+
+  return Math.round(distance * 10) / 10;
 }
 
 export function buildCourse(
@@ -343,6 +518,7 @@ export function buildCourse(
   interests: Interest[] = [],
   refDate?: string,
   lang: Lang = "ko",
+  theme: CourseTheme = "whale",
 ): Course {
   const en = lang === "en";
   const onDate = resolveRefDate(refDate); // 없거나 형식이 틀리면 오늘 — 엔진 내부는 항상 유효 날짜
@@ -357,24 +533,58 @@ export function buildCourse(
   const closedByRest = spots.filter(
     (s) => !closedSeasonal.includes(s) && !closedEvent.includes(s) && isClosedOn(s.opening, onDate),
   );
-  const dropped = new Set([...closedSeasonal, ...closedEvent, ...closedByRest]);
-  const pool = spots.filter((s) => !dropped.has(s));
+  const dropped = new Set([
+    ...closedSeasonal,
+    ...closedEvent,
+    ...closedByRest,
+  ]);
 
-const themeW = COMPANION_WEIGHT[companion];
-const categoryW = COMPANION_CATEGORY_WEIGHT[companion];
+  const pool = spots.filter((s) => {
+    // 휴무·비운항·종료된 축제 제외
+    if (dropped.has(s)) return false;
 
-const baseScore = (s: WhaleSpot) =>
-  (s.isCore ? 1 : 0.4) +
-  (categoryW[s.category] ?? 0.7) +
-  (s.isWhaleThemed
-    ? (themeW[s.theme] ?? 1) * WHALE_THEME_FACTOR
-    : 0) +
-  interestBonus(s, interests) +
-  (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) +
-  (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate)
-    ? EVENT_TODAY_WEIGHT
-    : 0) +
-  s.relevance;
+    // 숙박시설은 일반 관광 코스의 방문지로 사용하지 않는다.
+    // 숙소 추천 영역에서 별도로 보여준다.
+    if (s.contentTypeId === "32") return false;
+
+    // 캠핑장·야영장처럼 '머무는 시설'은
+    // 일반 관광 코스의 방문 장소로 넣지 않는다.
+    if (
+      s.category === "lodging" ||
+      /캠핑장|야영장|오토캠핑|글램핑|캠프/.test(s.title)
+    ) {
+      return false;
+    }
+
+    // 음식점은 '미식' 관심사를 선택했거나
+    // '미식·카페' 테마일 때 메인 코스 후보로 허용한다.
+    if (
+      s.contentTypeId === "39" &&
+      !interests.includes("food") &&
+      theme !== "food"
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const themeW = COMPANION_WEIGHT[companion];
+  const categoryW = COMPANION_CATEGORY_WEIGHT[companion];
+
+  const baseScore = (s: WhaleSpot) =>
+    (s.isCore ? 1 : 0.4) +
+    (categoryW[s.category] ?? 0.7) +
+    (s.isWhaleThemed
+      ? (themeW[s.theme] ?? 1) * WHALE_THEME_FACTOR
+      : 0) +
+    interestBonus(s, interests) +
+    courseThemeBonus(s, theme) +
+    (isPeak(s.peak, onDate) ? PEAK_WEIGHT : 0) +
+    (s.contentTypeId === "15" && isEventRunning(s.eventPeriod, onDate)
+      ? EVENT_TODAY_WEIGHT
+      : 0) +
+    s.relevance;
   /**
    * v1 선별 — 점수 상위 N개를 그냥 자르지 않고, 이미 고른 것과의 '다양성'을 반영해 하나씩 고른다.
    * 같은 관광 카테고리가 코스를 독식하지 않도록 n번째 선택마다 감쇠
@@ -388,16 +598,55 @@ const baseScore = (s: WhaleSpot) =>
     while (picked.length < limit && remaining.length) {
       let bestIdx = 0;
       let bestVal = -Infinity;
+
+      // 하루에 3곳씩 추천하므로 현재 날짜에 이미 고른 장소만 추린다.
+      const dayStart =
+        Math.floor(picked.length / STOPS_PER_DAY) * STOPS_PER_DAY;
+      const dayPicked = picked.slice(dayStart);
+
+      const foodPickedInDay =
+        theme === "food"
+          ? dayPicked.filter(isFoodSpot).length
+          : 0;
+
+      const foodStillNeeded = Math.max(0, 2 - foodPickedInDay);
+      const remainingSlotsInDay = STOPS_PER_DAY - dayPicked.length;
+
+      const mustPickFood =
+        theme === "food" &&
+        foodStillNeeded >= remainingSlotsInDay &&
+        remaining.some(isFoodSpot);
+
       remaining.forEach((s, i) => {
         const categorySeen = categoryCount.get(s.category) ?? 0;
+
         const clusterSeen = picked.filter(
           (p) => haversineKm(p, s) <= CLUSTER_KM,
         ).length;
 
-      const val =
-      baseScore(s) -
-      categorySeen * CATEGORY_DIMINISH -
-      clusterSeen * CLUSTER_DIMINISH;
+        // 같은 날 이미 선택된 관광지가 있다면,
+        // 그 장소들과 너무 멀리 떨어진 후보에는 이동거리 감점을 준다.
+        const nearestInDayKm =
+          dayPicked.length > 0
+            ? Math.min(...dayPicked.map((p) => haversineKm(p, s)))
+            : 0;
+
+        const farDistancePenalty =
+          nearestInDayKm > DAY_COMFORT_KM
+            ? (nearestInDayKm - DAY_COMFORT_KM) * FAR_DISTANCE_PENALTY
+            : 0;
+
+        const foodCompositionPenalty =
+          mustPickFood && !isFoodSpot(s)
+            ? 100
+            : 0;
+
+        const val =
+          baseScore(s) -
+          categorySeen * CATEGORY_DIMINISH -
+          clusterSeen * CLUSTER_DIMINISH -
+          farDistancePenalty -
+          foodCompositionPenalty;
         // 동점이면 원본(연관도·핵심 우선 정렬) 순서를 유지 — 재현성 보장.
         if (val > bestVal) {
           bestVal = val;
@@ -417,7 +666,24 @@ const baseScore = (s: WhaleSpot) =>
   const days = DAYS[duration];
   const need = Math.min(pool.length, days * STOPS_PER_DAY);
   const ranked = rank(pool, need);
-  const routed = orderByRoute(ranked); // 점수·다양성으로 '선별' → 거리로 '순서화'
+
+  // 먼저 전체적으로 가까운 장소끼리 묶은 뒤,
+  // 하루 단위로 나누고 각 날짜의 운영시간·거리까지 다시 최적화한다.
+
+  const dayRoutes: WhaleSpot[][] = [];
+
+  for (let day = 0; day < days; day++) {
+    const start = day * STOPS_PER_DAY;
+    const group = orderByRoute(
+      ranked.slice(start, start + STOPS_PER_DAY),
+    );
+
+    if (group.length > 0) {
+      dayRoutes.push(optimizeDayOrder(group));
+    }
+  }
+
+  const routed = dayRoutes.flat();
 
   // 이동시간 반영 스케줄링: 하루 10:00 시작, 지점당 체류 + 구간 이동시간으로 도착 시각 계산.
   let prev: WhaleSpot | null = null;
@@ -426,32 +692,40 @@ const baseScore = (s: WhaleSpot) =>
     const day = Math.floor(i / STOPS_PER_DAY) + 1;
     const order = (i % STOPS_PER_DAY) + 1;
     let legKm = 0;
+    let travelMin = 0;
+    let transportMode: TransportMode | undefined;
+
     if (order === 1) {
       cur = DAY_START_MIN;
     } else {
-      legKm = Math.round(haversineKm(prev as WhaleSpot, spot) * 10) / 10;
-      cur = Math.min(
-        cur + DWELL_MIN + Math.round((legKm / SPEED_KMH) * 60),
-        20 * 60,
-      );
+      const rawLegKm = haversineKm(prev as WhaleSpot, spot);
+      const travel = estimateTravel(rawLegKm);
+
+      legKm = Math.round(rawLegKm * 10) / 10;
+      travelMin = travel.travelMin;
+      transportMode = travel.transportMode;
+
+      cur += DWELL_MIN + travelMin;
     }
 
-// 운영 시작 전 도착하면 실제 오픈 시간까지 기다린 뒤 방문한다.
-if (!spot.opening?.alwaysOpenHours) {
-  const openMin = parseTimeMin(spot.opening?.open);
+    // 운영 시작 전 도착하면 실제 오픈 시간까지 기다린 뒤 방문한다.
+    if (!spot.opening?.alwaysOpenHours) {
+      const openMin = parseTimeMin(spot.opening?.open);
 
-  if (openMin !== null && cur < openMin) {
-    cur = openMin;
-  }
-}
+      if (openMin !== null && cur < openMin) {
+        cur = openMin;
+      }
+    }
 
-prev = spot;
+    prev = spot;
     return {
       spot,
       day,
       order,
       arrive: fmtTime(cur),
       legKm,
+      travelMin,
+      transportMode,
       isPeak: isPeak(spot.peak, onDate),
       openHours: openHoursLabel(spot.opening, lang),
       note: noteFor(spot, companion, onDate, lang),
@@ -514,21 +788,21 @@ prev = spot;
   // 기준일에 열리지 않는 축제는 코스에 넣지 않았다는 사실을 알린다(개최기간을 알 때만).
   for (const ev of closedEvent) {
     if (!ev.eventPeriod) continue;
-    
+
     const refYmd = onDate.replaceAll("-", "");
     const isUpcoming = ev.eventPeriod.start > refYmd;
-    
+
     if (en) {
       seasonNotes.push(
         isUpcoming
-        ? `${ev.title} isn't running on this date, so we left it out (scheduled ${fmtEventPeriod(ev.eventPeriod)}).`
-        : `${ev.title} isn't running on this date, so we left it out (last held ${fmtEventPeriod(ev.eventPeriod)}).`,
+          ? `${ev.title} isn't running on this date, so we left it out (scheduled ${fmtEventPeriod(ev.eventPeriod)}).`
+          : `${ev.title} isn't running on this date, so we left it out (last held ${fmtEventPeriod(ev.eventPeriod)}).`,
       );
     } else {
       seasonNotes.push(
         isUpcoming
-        ? `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (개최 예정 ${fmtEventPeriod(ev.eventPeriod)}).`
-        : `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
+          ? `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (개최 예정 ${fmtEventPeriod(ev.eventPeriod)}).`
+          : `${ev.title}${topicParticle(ev.title)} 이 날짜에 열리지 않아 코스에서 뺐어요 (최근 개최 ${fmtEventPeriod(ev.eventPeriod)}).`,
       );
     }
   }
@@ -564,9 +838,9 @@ prev = spot;
     seasonNotes.push(
       en
         ? `Only ${stops.length} of ${wanted} slots could be filled on this date` +
-          (why ? " — some places are closed or out of season." : " — the whale-themed pool is small.")
+        (why ? " — some places are closed or out of season." : " — the whale-themed pool is small.")
         : `이 날짜엔 ${wanted}곳 중 ${stops.length}곳만 채울 수 있었어요` +
-          (why ? " — 휴무·비운항인 곳이 있어서예요." : " — 고래 테마 스팟이 그만큼이라서예요."),
+        (why ? " — 휴무·비운항인 곳이 있어서예요." : " — 고래 테마 스팟이 그만큼이라서예요."),
     );
   }
 
@@ -583,12 +857,13 @@ prev = spot;
   }
 
   return {
+    theme,
     companion,
     duration,
     interests,
     refDate: onDate,
     stops,
-    distanceKm: totalDistanceKm(routed),
+    distanceKm: totalDistanceKmByDay(dayRoutes),
     substitutions,
     seasonNotes,
   };

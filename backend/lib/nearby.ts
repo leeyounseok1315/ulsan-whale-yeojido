@@ -8,12 +8,23 @@ import { isMockMode } from "./collect";
 // 거리순 정렬 + 반경 필터. 캐시 우선 + 생산 실패 시 직전 스냅샷 폴백(cache 레이어가 담당).
 // 절대규칙 #1: 사용자 노출 필드(title·address)는 파싱 경계에서 sanitize(공사 표기 차단).
 
-export type NearbyType = "food" | "lodging" | "tour";
-const TYPE_CONTENT: Record<NearbyType, string> = { food: "39", lodging: "32", tour: "12" };
-export function isNearbyType(v: string | null | undefined): v is NearbyType {
-  return v === "food" || v === "lodging" || v === "tour";
-}
+export type NearbyType = "food" | "cafe" | "lodging" | "tour";
 
+const TYPE_CONTENT: Record<NearbyType, string> = {
+  food: "39",
+  cafe: "39",
+  lodging: "32",
+  tour: "12",
+};
+
+export function isNearbyType(v: string | null | undefined): v is NearbyType {
+  return (
+    v === "food" ||
+    v === "cafe" ||
+    v === "lodging" ||
+    v === "tour"
+  );
+}
 const TTL_MS = 1000 * 60 * 60; // 1시간
 const NEARBY_CALL: CallOpts = { timeoutMs: 4000, maxTries: 2 }; // 요청 경로 — 오래 잡지 않는다
 const MAX_FETCH = 30; // 캐시에는 넉넉히 담고 요청별 limit로 잘라 낸다
@@ -57,7 +68,14 @@ export async function getNearby(
         { radius, contentTypeId: TYPE_CONTENT[opts.type], numOfRows: MAX_FETCH },
         NEARBY_CALL,
       );
-      return raw
+      const typedRaw =
+        opts.type === "cafe"
+          ? raw.filter((item) => item.cat3 === "A05020900")
+          : opts.type === "food"
+            ? raw.filter((item) => item.cat3 !== "A05020900")
+            : raw;
+
+      return typedRaw
         .map(toNearby)
         .filter((n) => n.lon && n.lat)
         .sort((a, b) => a.distanceM - b.distanceM);

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { YeojidoMap } from "@/frontend/components/map/YeojidoMap";
 import { MapLegend } from "@/frontend/components/map/MapLegend";
@@ -54,14 +55,18 @@ function haversineKm(
   const h =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(a.lat)) *
-      Math.cos(toRad(b.lat)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(b.lat)) *
+    Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-export default function MapPage() {
-  const [scope, setScope] = useState<MapScope>("whale");
+function MapContent() {
+  const searchParams = useSearchParams();
+
+  const [scope, setScope] = useState<MapScope>(
+    searchParams.get("scope") === "all" ? "all" : "whale",
+  );
   const [active, setActive] = useState<WhaleThemeId | null>(null);
   const [activeCategory, setActiveCategory] =
     useState<SpotCategory | null>(null);
@@ -90,7 +95,7 @@ export default function MapPage() {
           : true;
 
       const matchesQuery =
-         !q || s.title.includes(q);
+        !q || s.title.includes(q);
 
       return matchesTheme && matchesCategory && matchesQuery;
     });
@@ -407,6 +412,14 @@ export default function MapPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function MapPage() {
+  return (
+    <Suspense fallback={null}>
+      <MapContent />
+    </Suspense>
   );
 }
 
