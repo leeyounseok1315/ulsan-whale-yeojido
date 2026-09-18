@@ -126,6 +126,19 @@ function inferCategory(
   return "other";
 }
 
+export function homepageUrl(value?: string): string | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+
+  // TourAPI homepage가 <a href="...">...</a> 형태인 경우 href만 추출
+  const href = raw.match(/href=["']([^"']+)["']/i)?.[1];
+  const candidate = (href ?? raw).replace(/&amp;/gi, "&").trim();
+
+  // 일반 URL 또는 HTML 안 URL 모두 대응
+  return candidate.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
+}
+
+
 /** 원시 응답 → 앱 표준 모델. 테마 태깅 · 공사 표기 sanitize · 핵심 스팟 화이트리스트 적용. */
 export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
   const id = raw.contentid;
@@ -153,6 +166,8 @@ export function toWhaleSpot(raw: RawTourItem): WhaleSpot {
     image: raw.firstimage ? raw.firstimage : null,
     tel: raw.tel ? sanitize(raw.tel) : null,
     summary: sanitize(raw.overview ?? ""),
+    homepage: homepageUrl(raw.homepage),
+    sourceModifiedAt: raw.modifiedtime?.trim() || undefined,
     isCore: Boolean(core),
     isWhaleThemed: Boolean(core) || relevance >= WHALE_RELEVANCE_THRESHOLD,
     relevance,

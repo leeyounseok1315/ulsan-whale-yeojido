@@ -99,7 +99,14 @@ async function withOperatingInfo(spots: WhaleSpot[]): Promise<WhaleSpot[]> {
       ...s,
       eventPeriod: s.contentTypeId === "15" ? eventPeriodOf(intro) : undefined,
       opening: parseOpening(ex.useTime, ex.restDate),
-      detail: { useTime: ex.useTime, restDate: ex.restDate, useFee: ex.useFee },
+      detail: {
+        useTime: ex.useTime,
+        restDate: ex.restDate,
+        useFee: ex.useFee,
+        parking: ex.parking,
+        reservation: ex.reservation,
+        infoCenter: ex.infoCenter,
+      },
     });
   });
 }
@@ -188,7 +195,7 @@ async function acquireBatchLock(): Promise<boolean> {
 }
 async function releaseBatchLock(): Promise<void> {
   localBatchRunning = false;
-  if (redisAvailable()) await redisCommand(["DEL", BATCH_LOCK_KEY]).catch(() => {});
+  if (redisAvailable()) await redisCommand(["DEL", BATCH_LOCK_KEY]).catch(() => { });
 }
 
 /** 배치/수집 트리거 — 강제 재수집 → 캐시 갱신 → 배치 이력 기록. (Vercel Cron·수집 스크립트가 호출) */

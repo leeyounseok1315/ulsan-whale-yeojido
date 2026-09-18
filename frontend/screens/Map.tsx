@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { YeojidoMap } from "@/frontend/components/map/YeojidoMap";
@@ -63,6 +63,8 @@ function haversineKm(
 
 function MapContent() {
   const searchParams = useSearchParams();
+  const requestedSpotId = searchParams.get("spot");
+  const handledSpotRef = useRef<string | null>(null);
 
   const [scope, setScope] = useState<MapScope>(
     searchParams.get("scope") === "all" ? "all" : "whale",
@@ -81,6 +83,19 @@ function MapContent() {
   });
 
   const spots = data ?? [];
+  useEffect(() => {
+    if (!requestedSpotId) return;
+    if (handledSpotRef.current === requestedSpotId) return;
+
+    const target = spots.find(
+      (spot) => String(spot.id) === requestedSpotId,
+    );
+
+    if (!target) return;
+
+    handledSpotRef.current = requestedSpotId;
+    setSelected(target);
+  }, [requestedSpotId, spots]);
 
   const shown = useMemo(() => {
     const q = query.trim();

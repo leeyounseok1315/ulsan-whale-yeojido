@@ -1,11 +1,19 @@
 import type { WhaleSpot } from "./types";
 import { getSpot } from "./data";
-import { attachSeasonRules, eventPeriodOf } from "./adapter";
+import {
+  attachSeasonRules,
+  eventPeriodOf,
+  homepageUrl,
+} from "./adapter";
 import { detailCommon, detailImages, detailIntro } from "./tourapi";
 import { cached } from "./cache";
 import { sanitize } from "./sanitize";
 import { isMockMode } from "./collect";
-import { INTRO_FIELDS, clean, pick } from "./introFields";
+import {
+  clean,
+  extractIntro,
+  pick,
+} from "./introFields";
 
 // detail* 통합 상세 조회 — base 스팟 + detailIntro2(운영시간·휴무·요금) + detailImage2(갤러리)
 // + 필요 시 detailCommon2(overview). 스팟별 캐싱. (PLAN.md W3: detailCommon2/Intro2/Image2 통합)
@@ -43,14 +51,15 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
   if (isMockMode()) return base; // mock 픽스처는 이미 detail 포함
 
   // 상세 캐시에도 base가 통째로 들어가므로, 시즌 규칙은 반환 직전에 현재 코드 기준으로 다시 부착한다.
-  return attachSeasonRules(await cached(`detail:${id}`, TTL_MS, async () => {
+  return attachSeasonRules(await cached(`detail:v2:${id}`, TTL_MS, async () => {
     const [intro, images, common] = await Promise.all([
       detailIntro(id, base.contentTypeId).catch(() => null),
       detailImages(id).catch(() => [] as string[]),
-      base.summary ? Promise.resolve(null) : detailCommon(id).catch(() => null), // overview 없을 때만
+      detailCommon(id).catch(() => null),
     ]);
 
     const overview = base.summary || clean(common?.overview) || "";
+    const ex = extractIntro(intro);
     let gallery = images;
     let firstImg =
       base.image ||
@@ -75,16 +84,31 @@ export async function getSpotDetail(id: string): Promise<WhaleSpot | null> {
     return {
       ...base,
       summary: overview,
-      tel: base.tel || pick(intro, INTRO_FIELDS.tel) || (common?.tel ? sanitize(common.tel) : null) || null,
+      tel:
+        base.tel ||
+        ex.infoCenter ||
+        (common?.tel ? sanitize(common.tel) : null) ||
+        null,
+
+      homepage:
+        base.homepage ||
+        homepageUrl(common?.homepage),
+
+      sourceModifiedAt:
+        common?.modifiedtime?.trim() ||
+        base.sourceModifiedAt,
       image: firstImg,
       images: gallery,
       detail: {
         useTime:
           base.contentTypeId === "15"
             ? festivalUseTime(intro)
-            : pick(intro, INTRO_FIELDS.useTime),
-        restDate: pick(intro, INTRO_FIELDS.restDate),
-        useFee: pick(intro, INTRO_FIELDS.useFee),
+            : ex.useTime,
+        restDate: ex.restDate,
+        useFee: ex.useFee,
+        parking: ex.parking,
+        reservation: ex.reservation,
+        infoCenter: ex.infoCenter,
       },
     };
   }, { tags: ["spots", "detail"] }));

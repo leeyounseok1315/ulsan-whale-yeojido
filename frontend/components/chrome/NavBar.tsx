@@ -10,6 +10,7 @@ import { WhaleMascot } from "@/frontend/components/chrome/WhaleMascot";
 const NAV = [
   { href: "/map", label: "여지도" },
   { href: "/recommend", label: "코스추천" },
+  { href: "/passport", label: "고래여권" },
 ];
 
 function LogoPill() {
@@ -37,9 +38,8 @@ export function NavBar() {
             <Link
               key={n.href}
               href={n.href}
-              className={`wy-legend rounded-[2px] px-2.5 py-2 text-[13px] transition-colors ${
-                active ? "bg-white/10 text-signal" : "text-[color:var(--color-navgold)] hover:text-signal"
-              }`}
+              className={`wy-legend rounded-[2px] px-2.5 py-2 text-[13px] transition-colors ${active ? "bg-white/10 text-signal" : "text-[color:var(--color-navgold)] hover:text-signal"
+                }`}
             >
               {n.label}
             </Link>
@@ -48,7 +48,7 @@ export function NavBar() {
       </div>
       <Link
         href="/recommend"
-        className="wy-chip wy-legend ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-[2px] bg-amber px-2.5 text-[11px] text-carbon"
+        className="wy-chip wy-legend ml-auto hidden min-h-9 items-center gap-1.5 rounded-[2px] bg-amber px-2.5 text-[11px] text-carbon sm:inline-flex"
       >
         코스 만들기
         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden>

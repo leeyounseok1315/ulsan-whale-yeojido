@@ -9,6 +9,7 @@ import { WhaleMascot } from "@/frontend/components/chrome/WhaleMascot";
 import { Plate } from "@/frontend/components/chrome/Plate";
 import { SectionLabelBar } from "@/frontend/components/chrome/SectionLabelBar";
 import { ChromeButton } from "@/frontend/components/chrome/ChromeButton";
+import { saveVerifiedVisit } from "@/frontend/lib/visitRecords";
 import type { NearbySpot, WhaleSpot } from "@/backend/lib/types";
 
 const proxied = (src: string) => `/api/img?u=${encodeURIComponent(src)}`;
@@ -50,15 +51,55 @@ function InfoChip({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+function formatSourceModifiedAt(value?: string): string | undefined {
+  if (!value) return undefined;
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 8) return value;
+
+  return `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6, 8)}`;
+}
+
+function distanceMeters(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+): number {
+  const R = 6371e3;
+  const toRad = (degree: number) => (degree * Math.PI) / 180;
+
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) *
+    Math.cos(toRad(b.lat)) *
+    Math.sin(dLon / 2) ** 2;
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+const VISIT_RADIUS_M = 200;
+
+type VisitVerifyStatus =
+  | "idle"
+  | "checking"
+  | "success"
+  | "tooFar"
+  | "denied"
+  | "error";
+
 // 몰입형 '장소 도착' 화면 — 마커를 누르면 그 장소에 입장한 듯 전체화면으로 연다.
 export function SpotVisit({
   spot,
   refDate,
   onClose,
+  backLabel = "← 여지도로 돌아가기",
 }: {
   spot: WhaleSpot;
   refDate?: string;
   onClose: () => void;
+  backLabel?: string;
 }) {
   const theme = WHALE_THEMES[spot.theme];
   const backRef = useRef<HTMLButtonElement>(null);
@@ -95,12 +136,69 @@ export function SpotVisit({
   const [mainImg, setMainImg] = useState<string | null>(null);
   // 이미지 실패를 src 단위로 추적 — 빠른 스팟 전환 시 이전 이미지 중단 오류가 새 스팟에 새지 않게(경합 방지).
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [visitStatus, setVisitStatus] =
+    useState<VisitVerifyStatus>("idle");
+
+  const [visitDistanceM, setVisitDistanceM] =
+    useState<number | null>(null);
+  function verifyVisit() {
+    if (!navigator.geolocation) {
+      setVisitStatus("error");
+      return;
+    }
+
+    setVisitStatus("checking");
+    setVisitDistanceM(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userPosition = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        };
+
+        const distance = distanceMeters(userPosition, {
+          lat: spot.lat,
+          lon: spot.lon,
+        });
+
+        setVisitDistanceM(Math.round(distance));
+
+        if (distance <= VISIT_RADIUS_M) {
+          saveVerifiedVisit({
+            spotId: String(spot.id),
+            title: spot.title,
+            theme: spot.theme,
+            verifiedAt: new Date().toISOString(),
+          });
+
+          setVisitStatus("success");
+        } else {
+          setVisitStatus("tooFar");
+        }
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setVisitStatus("denied");
+        } else {
+          setVisitStatus("error");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      },
+    );
+  }
   const heroImg = mainImg ?? d.image ?? images[0] ?? null;
   const showImage = Boolean(heroImg) && failedSrc !== heroImg;
 
   useEffect(() => {
     setMainImg(null);
     setFailedSrc(null);
+    setVisitStatus("idle");
+    setVisitDistanceM(null);
   }, [spot.id]);
 
   // 접근성: 열릴 때 뒤로가기 포커스, Esc로 닫기, 닫힐 때 직전 포커스 복원.
@@ -139,7 +237,7 @@ export function SpotVisit({
           onClick={onClose}
           className="wy-chip wy-legend inline-flex min-h-11 items-center gap-1.5 rounded-[2px] bg-canvas-soft px-3 text-[12px] text-carbon"
         >
-          ← 지도로
+          {backLabel}
         </button>
         <span className="wy-legend text-[11px] text-signal">지금, 여기</span>
         <span className="wy-chip wy-legend ml-auto rounded-[2px] bg-amber px-2 py-1 text-[10px] text-carbon">{theme.label}</span>
@@ -189,6 +287,56 @@ export function SpotVisit({
 
           <p className="mt-2 px-1 font-mono text-[11px] text-white/80">{spot.address}</p>
 
+          {/* GPS 방문 인증 */}
+          <div className="mt-3">
+            <SectionLabelBar title="방문 인증" />
+
+            <Plate tone="surface" className="mt-1.5 p-3">
+              <p className="text-[12px] leading-relaxed text-ink-soft">
+                이 장소에서 200m 이내에 있을 때 GPS로 방문을 인증할 수 있어요.
+              </p>
+
+              <button
+                type="button"
+                onClick={verifyVisit}
+                disabled={visitStatus === "checking" || visitStatus === "success"}
+                className="mt-2 min-h-11 w-full rounded-[3px] bg-signal px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {visitStatus === "checking"
+                  ? "📍 위치 확인 중…"
+                  : visitStatus === "success"
+                    ? "✓ 방문 인증 완료"
+                    : "📍 이 장소 방문 인증하기"}
+              </button>
+
+              {visitStatus === "success" && (
+                <p className="mt-2 text-[12px] font-semibold text-ink">
+                  ✓ 현재 위치가 확인됐어요. 방문 인증에 성공했습니다!
+                </p>
+              )}
+
+              {visitStatus === "tooFar" && visitDistanceM !== null && (
+                <p className="mt-2 text-[12px] text-ink">
+                  현재 이 장소에서 약 {visitDistanceM.toLocaleString("ko-KR")}m 떨어져
+                  있어요. 200m 이내에서 다시 시도해 주세요.
+                </p>
+              )}
+
+              {visitStatus === "denied" && (
+                <p className="mt-2 text-[12px] text-ink">
+                  위치 권한이 차단되어 있어요. 브라우저에서 위치 권한을 허용한 뒤
+                  다시 시도해 주세요.
+                </p>
+              )}
+
+              {visitStatus === "error" && (
+                <p className="mt-2 text-[12px] text-ink">
+                  현재 위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.
+                </p>
+              )}
+            </Plate>
+          </div>
+
           {spot.seasonal && (
             <Plate tone="surface" className="mt-2 flex items-center gap-2 px-3 py-2">
               <span className="wy-chip wy-legend rounded-[2px] bg-amber px-2 py-0.5 text-[10px] text-carbon">
@@ -226,17 +374,67 @@ export function SpotVisit({
           )}
 
           {/* 운영 정보 */}
-          {(d.detail?.useTime || d.detail?.restDate || d.detail?.useFee || d.tel) && (
-            <div className="mt-3">
-              <SectionLabelBar title="운영 정보" />
-              <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                <InfoChip label="운영시간" value={d.detail?.useTime} />
-                <InfoChip label="휴무" value={d.detail?.restDate} />
-                <InfoChip label="요금" value={d.detail?.useFee} />
-                <InfoChip label="전화" value={d.tel} />
+          {(d.detail?.useTime ||
+            d.detail?.restDate ||
+            d.detail?.useFee ||
+            d.detail?.infoCenter ||
+            d.tel) && (
+              <div className="mt-3">
+                <SectionLabelBar title="운영 정보" />
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                  <InfoChip label="운영시간" value={d.detail?.useTime} />
+                  <InfoChip label="휴무" value={d.detail?.restDate} />
+                  <InfoChip label="요금" value={d.detail?.useFee} />
+                  <InfoChip
+                    label="문의"
+                    value={d.detail?.infoCenter ?? d.tel}
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+          {/* 여행정보 더보기 */}
+          {(d.detail?.parking ||
+            d.detail?.reservation ||
+            d.homepage ||
+            d.sourceModifiedAt) && (
+              <div className="mt-3">
+                <SectionLabelBar title="여행정보 더보기" />
+
+                <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
+                  <InfoChip label="주차" value={d.detail?.parking} />
+                  <InfoChip label="예약 안내" value={d.detail?.reservation} />
+
+                  {d.homepage && (
+                    <div className="wy-plate bg-white p-2">
+                      <div className="wy-legend text-[9px] text-[color:var(--color-chrome)]">
+                        공식 홈페이지
+                      </div>
+
+                      <a
+                        href={d.homepage}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex min-h-9 items-center text-[12px] font-semibold text-signal underline underline-offset-2"
+                      >
+                        공식 정보 확인 ↗
+                      </a>
+                    </div>
+                  )}
+
+                  {d.sourceModifiedAt && (
+                    <InfoChip
+                      label="TourAPI 정보 수정일"
+                      value={formatSourceModifiedAt(d.sourceModifiedAt)}
+                    />
+                  )}
+                </div>
+
+                <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-white/65">
+                  자료 출처 · 한국관광공사 TourAPI
+                </p>
+              </div>
+            )}
           {isLoading && <p className="mt-2 px-1 text-[11px] text-white/70">그 장소 정보를 불러오는 중…</p>}
 
           {/* 주변 — 이 자리에서 가까운 곳 */}
@@ -254,7 +452,7 @@ export function SpotVisit({
           <div className="mt-4 flex items-center justify-between pb-2">
             <span className="font-mono text-[10px] text-white/60">자료 · 공공데이터</span>
             <ChromeButton variant="submit" onClick={onClose}>
-              ← 여지도로 돌아가기
+              {backLabel}
             </ChromeButton>
           </div>
         </div>

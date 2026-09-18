@@ -17,6 +17,9 @@ export interface RawTourItem {
   tel?: string;
   cat3?: string;
   overview?: string;
+  homepage?: string;
+  modifiedtime?: string;
+
   // detailCommon2 / detailIntro2 로 보강되는 필드
   usetime?: string;
   restdate?: string;
@@ -82,6 +85,8 @@ export interface WhaleSpot {
   image: string | null;
   tel: string | null;
   summary: string; // overview (공사 표기 sanitize 적용)
+  homepage?: string;
+  sourceModifiedAt?: string;
   isCore: boolean; // 핵심 5대 고래 스팟 화이트리스트
   isWhaleThemed: boolean; // 고래 테마 여부 (= isCore || relevance>=임계) — 태깅 엔진 출력
   relevance: number; // 0~1 고래 연관도
@@ -97,6 +102,9 @@ export interface SpotDetail {
   useTime?: string;
   restDate?: string;
   useFee?: string;
+  parking?: string;
+  reservation?: string;
+  infoCenter?: string;
 }
 
 export type Companion = "family" | "couple" | "friends" | "solo";
@@ -215,6 +223,8 @@ export interface CourseStop {
   legKm: number; // 같은 날 직전 지점에서의 이동 거리(km). 하루 첫 지점은 0.
   travelMin: number; // 예상 이동시간(분). 하루 첫 지점은 0.
   transportMode?: TransportMode; // 추천 이동수단. 하루 첫 지점은 없음.
+  transportFareWon?: number;
+  transportFareKind?: "odsay" | "estimate";
 
   isPeak: boolean; // 기준 날짜 기준 제철인지
   openHours?: string; // 운영시간 라벨(예: "09:00~18:00", "상시 개방") — W7

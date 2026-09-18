@@ -1,5 +1,6 @@
 "use client";
 
+import { SpotVisit } from "@/frontend/components/map/SpotVisit";
 import Link from "next/link";
 import { useState } from "react";
 import { getBusTransit } from "@/frontend/lib/odsay";
@@ -65,6 +66,42 @@ function haversineKm(
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+function estimateTaxiFareWon(distanceKm: number): number {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
+
+  // 울산 중형택시: 기본 2km 4,500원, 이후 125m당 100원.
+  // legKm은 직선거리이므로 실제 택시요금이 아니라 거리 기준 예상치다.
+  if (distanceKm <= 2) return 4500;
+
+  const extraMeters = (distanceKm - 2) * 1000;
+  const extraFare = Math.ceil(extraMeters / 125) * 100;
+
+  return 4500 + extraFare;
+}
+
+function formatWon(value: number): string {
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function closingWarning(stop: Course["stops"][number]): string | null {
+  if (stop.spot.opening?.alwaysOpenHours) return null;
+
+  const arriveMin = parseClock(stop.arrive);
+  const closeMin = parseClock(stop.spot.opening?.close);
+
+  if (arriveMin === null || closeMin === null) return null;
+
+  if (arriveMin >= closeMin) {
+    return `도착 예정 ${stop.arrive} · 운영 종료 ${stop.spot.opening?.close}`;
+  }
+
+  if (arriveMin + COURSE_DWELL_MIN > closeMin) {
+    return `운영 종료 ${stop.spot.opening?.close} 전 체류시간이 부족할 수 있어요`;
+  }
+
+  return null;
+}
+
 async function applyTransitToCourse(course: Course): Promise<Course> {
   const updatedStops: Course["stops"] = [];
 
@@ -77,12 +114,26 @@ async function applyTransitToCourse(course: Course): Promise<Course> {
         ...stop,
         travelMin: 0,
         transportMode: undefined,
+        transportFareWon: undefined,
+        transportFareKind: undefined,
       });
       continue;
     }
 
     let travelMin = stop.travelMin;
     let transportMode = stop.transportMode;
+    let transportFareWon = stop.transportFareWon;
+    let transportFareKind = stop.transportFareKind;
+
+    if (transportMode === "walk") {
+      transportFareWon = 0;
+      transportFareKind = undefined;
+    }
+
+    if (transportMode === "taxi") {
+      transportFareWon = estimateTaxiFareWon(stop.legKm);
+      transportFareKind = "estimate";
+    }
 
     // 서버에서 택시 후보로 잡힌 장거리 구간만 ODsay 버스 경로를 확인한다.
     if (stop.transportMode === "taxi") {
@@ -91,8 +142,21 @@ async function applyTransitToCourse(course: Course): Promise<Course> {
       if (transit.available && transit.travelMin !== undefined) {
         transportMode = "bus";
         travelMin = transit.travelMin;
+
+        if (
+          typeof transit.payment === "number" &&
+          Number.isFinite(transit.payment)
+        ) {
+          transportFareWon = transit.payment;
+          transportFareKind = "odsay";
+        } else {
+          transportFareWon = undefined;
+          transportFareKind = undefined;
+        }
       } else {
         transportMode = "taxi";
+        transportFareWon = estimateTaxiFareWon(stop.legKm);
+        transportFareKind = "estimate";
       }
     }
 
@@ -118,6 +182,8 @@ async function applyTransitToCourse(course: Course): Promise<Course> {
       arrive: formatClock(arriveMin),
       travelMin,
       transportMode,
+      transportFareWon,
+      transportFareKind,
     });
   }
 
@@ -141,6 +207,7 @@ export default function RecommendPage() {
   >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSpot, setSelectedSpot] = useState<WhaleSpot | null>(null);
 
   const toggleInterest = (i: Interest) =>
     setInterests((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
@@ -395,70 +462,131 @@ export default function RecommendPage() {
                     .filter((s) => s.day === day)
                     .map((stop, idx) => (
                       <li key={stop.spot.id}>
-                        <Plate tone="platinum" className="flex gap-3 p-2.5">
-                          <span className="wy-chip flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-full bg-signal text-[12px] font-bold text-white">
-                            {idx + 1}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <span className="font-mono text-[13px] font-bold text-carbon">{stop.arrive}</span>
-                              {stop.transportMode && (
-                                <span className="font-mono text-[10px] text-carbon/60">
-                                  · {stop.transportMode === "walk"
-                                    ? "🚶 도보"
-                                    : stop.transportMode === "bus"
-                                      ? "🚌 버스"
-                                      : "🚕 택시"}
-                                  {" "}예상 약 {stop.travelMin}분
-                                  {" · "}
-                                  {stop.legKm > 0 ? `${stop.legKm}km` : "매우 가까움"}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSpot(stop.spot)}
+                          className="block w-full text-left"
+                        >
+                          <Plate tone="platinum" className="flex gap-3 p-2.5">
+                            <span className="wy-chip flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-full bg-signal text-[12px] font-bold text-white">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="font-mono text-[13px] font-bold text-carbon">{stop.arrive}</span>
+                                {stop.transportMode && (
+                                  <span className="font-mono text-[10px] text-carbon/60">
+                                    · {stop.transportMode === "walk"
+                                      ? "🚶 도보"
+                                      : stop.transportMode === "bus"
+                                        ? "🚌 버스"
+                                        : "🚕 택시"}
+                                    {" "}예상 약 {stop.travelMin}분
+                                    {" · "}
+                                    {stop.legKm > 0
+                                      ? `직선 약 ${stop.legKm}km`
+                                      : "매우 가까움"}
+
+                                    {typeof stop.transportFareWon === "number" && (
+                                      <>
+                                        {" · "}
+                                        {stop.transportFareKind === "estimate" ? "예상 " : ""}
+                                        {formatWon(stop.transportFareWon)}
+                                      </>
+                                    )}
+                                  </span>
+                                )}
+                                <span className="ml-auto wy-legend text-[10px] text-[color:var(--color-chrome)]">
+                                  {stop.spot.contentTypeId === "39"
+                                    ? stop.spot.cat3 === "A05020900"
+                                      ? "☕ 카페"
+                                      : "🍽️ 먹거리"
+                                    : WHALE_THEMES[stop.spot.theme].label}
                                 </span>
-                              )}
-                              <span className="ml-auto wy-legend text-[10px] text-[color:var(--color-chrome)]">
-                                {stop.spot.contentTypeId === "39"
-                                  ? stop.spot.cat3 === "A05020900"
-                                    ? "☕ 카페"
-                                    : "🍽️ 먹거리"
-                                  : WHALE_THEMES[stop.spot.theme].label}
-                              </span>
-                            </div>
-                            <h3 className="mt-0.5 text-[15px] font-bold text-ink">{stop.spot.title}</h3>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {stop.openHours && (
-                                <span className="wy-legend rounded-[2px] bg-canvas-soft px-1.5 py-0.5 text-[9px] text-carbon">
-                                  운영 {stop.openHours}
-                                </span>
-                              )}
-                              {stop.spot.seasonal && (
-                                <span className="wy-legend rounded-[2px] bg-amber px-1.5 py-0.5 text-[9px] text-carbon">
-                                  {isSeasonOpen(stop.spot.seasonal, course.refDate) ? "운항 중" : "운항 휴지기"}
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-1 text-[12px] leading-snug text-ink-soft">{stop.note}</p>
-                            {stop.nearby && stop.nearby.length > 0 && (
-                              <div className="wy-dotline mt-2 pt-1.5">
-                                <span className="wy-legend text-[9px] text-carbon/60">주변 먹거리</span>
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {stop.nearby.map((n) => (
-                                    <span key={n.id} className="rounded-[2px] bg-white px-1.5 py-0.5 text-[10px] text-ink">
-                                      {n.title} <span className="text-carbon/50">{n.distanceM}m</span>
-                                    </span>
-                                  ))}
-                                </div>
                               </div>
-                            )}
-                          </div>
-                        </Plate>
+                              <h3 className="mt-0.5 text-[15px] font-bold text-ink">{stop.spot.title}</h3>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {stop.openHours && (
+                                  <span className="wy-legend rounded-[2px] bg-canvas-soft px-1.5 py-0.5 text-[9px] text-carbon">
+                                    운영 {stop.openHours}
+                                  </span>
+                                )}
+                                {closingWarning(stop) && (
+                                  <span className="wy-legend rounded-[2px] bg-amber px-1.5 py-0.5 text-[9px] text-carbon">
+                                    ⚠ {closingWarning(stop)}
+                                  </span>
+                                )}
+                                {stop.spot.seasonal && (
+                                  <span className="wy-legend rounded-[2px] bg-amber px-1.5 py-0.5 text-[9px] text-carbon">
+                                    {isSeasonOpen(stop.spot.seasonal, course.refDate) ? "운항 중" : "운항 휴지기"}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-[12px] leading-snug text-ink-soft">{stop.note}</p>
+                              {stop.nearby && stop.nearby.length > 0 && (
+                                <div className="wy-dotline mt-2 pt-1.5">
+                                  <span className="wy-legend text-[9px] text-carbon/60">주변 먹거리</span>
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {stop.nearby.map((n) => (
+                                      <span key={n.id} className="rounded-[2px] bg-white px-1.5 py-0.5 text-[10px] text-ink">
+                                        {n.title} <span className="text-carbon/50">{n.distanceM}m</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </Plate>
+                        </button>
                       </li>
                     ))}
                 </ol>
+                <div className="mt-2 flex justify-end">
+                  <span className="wy-chip rounded-[2px] bg-white px-2.5 py-1 text-[11px] font-semibold text-carbon">
+                    Day {day} 이동비 예상{" "}
+                    {formatWon(
+                      course.stops
+                        .filter((s) => s.day === day)
+                        .reduce((sum, s) => sum + (s.transportFareWon ?? 0), 0),
+                    )}
+                  </span>
+                </div>
               </div>
             ))}
 
+            <div className="mt-4">
+              <SectionLabelBar title="💰 이번 고래여행 예상비용" />
+
+              <Plate tone="surface" className="mt-1.5 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-ink">
+                    코스 이동비
+                  </span>
+
+                  <strong className="font-mono text-[17px] text-carbon">
+                    {formatWon(
+                      course.stops.reduce(
+                        (sum, stop) => sum + (stop.transportFareWon ?? 0),
+                        0,
+                      ),
+                    )}
+                  </strong>
+                </div>
+
+                <p className="mt-2 text-[10px] leading-relaxed text-carbon/60">
+                  버스 요금은 ODsay 제공 정보를 사용하고, 택시는 직선거리 기준 예상 금액입니다.
+                  실제 도로거리·교통상황·할증에 따라 달라질 수 있습니다.
+                </p>
+
+                <p className="mt-1 text-[10px] leading-relaxed text-carbon/60">
+                  입장·이용료와 음식·숙박비는 인원·연령·선택 메뉴에 따라 달라질 수 있어
+                  확인되지 않은 금액은 합계에 임의로 포함하지 않습니다.
+                </p>
+              </Plate>
+            </div>
             <div className="mt-3 flex items-center justify-between">
               <span className="font-mono text-[11px] text-carbon/60">
-                총 {course.distanceKm}km
+                코스 직선거리 합계 {course.distanceKm}km
               </span>
               <span className="wy-chip rounded-[2px] bg-amber px-2 py-0.5 text-[10px] font-bold text-carbon">
                 공공데이터
@@ -527,6 +655,14 @@ export default function RecommendPage() {
           </section>
         )}
       </div>
+      {selectedSpot && (
+        <SpotVisit
+          spot={selectedSpot}
+          refDate={course?.refDate}
+          onClose={() => setSelectedSpot(null)}
+          backLabel="← 코스로 돌아가기"
+        />
+      )}
     </main>
   );
 }
