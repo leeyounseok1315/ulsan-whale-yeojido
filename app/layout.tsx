@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "@/frontend/globals.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { Providers } from "@/frontend/providers";
 
 export const metadata: Metadata = {

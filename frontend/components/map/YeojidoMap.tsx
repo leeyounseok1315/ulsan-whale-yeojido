@@ -114,14 +114,32 @@ export function YeojidoMap({
   const points = useMemo<Pt[]>(() => spots.map((s) => ({ s, ...projectToMap(s.lon, s.lat) })), [spots]);
   const clusters = useMemo(() => clusterPoints(points, view.k), [points, view.k]);
 
-  const scaleOf = (r: DOMRect) => Math.min(r.width / MAP_W, r.height / MAP_H);
+  const shouldCover = (r: DOMRect) =>
+    r.width / r.height < 0.9;
+
+  const scaleOf = (r: DOMRect) =>
+    shouldCover(r)
+      ? Math.max(
+        r.width / MAP_W,
+        r.height / MAP_H,
+      )
+      : Math.min(
+        r.width / MAP_W,
+        r.height / MAP_H,
+      );
 
   // 여지도가 컨테이너에 맞춰 레터박싱되는 배율(viewBox 단위 → 화면 px). 탭 영역 산정에 쓴다.
   const [fit, setFit] = useState(1);
+  const [coverMode, setCoverMode] = useState(false);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const measure = () => setFit(scaleOf(el.getBoundingClientRect()) || 1);
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+
+      setFit(scaleOf(rect) || 1);
+      setCoverMode(shouldCover(rect));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -129,9 +147,18 @@ export function YeojidoMap({
   }, []);
   const toVb = (cx: number, cy: number, r: DOMRect) => {
     const s = scaleOf(r);
-    const ox = (r.width - MAP_W * s) / 2;
+    const cover = shouldCover(r);
+
+    const ox = cover
+      ? (r.width - MAP_W * s) / 2
+      : 0;
+
     const oy = (r.height - MAP_H * s) / 2;
-    return { x: (cx - r.left - ox) / s, y: (cy - r.top - oy) / s };
+
+    return {
+      x: (cx - r.left - ox) / s,
+      y: (cy - r.top - oy) / s,
+    };
   };
 
   const zoomAt = (p: { x: number; y: number }, factor: number) =>
@@ -230,7 +257,7 @@ export function YeojidoMap({
   return (
     <div
       ref={box}
-      className="relative h-full w-full touch-none select-none overflow-hidden bg-canvas"
+      className="relative h-full w-full touch-none select-none overflow-hidden bg-[linear-gradient(180deg,#72d1e7_0%,#55b9df_50%,#3f9fd5_100%)]"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -238,6 +265,11 @@ export function YeojidoMap({
     >
       <svg
         viewBox={`0 0 ${MAP_W} ${MAP_H}`}
+        preserveAspectRatio={
+          coverMode
+            ? "xMidYMid slice"
+            : "xMinYMid meet"
+        }
         className="h-full w-full"
         role="application"
         tabIndex={0}
@@ -277,9 +309,8 @@ export function YeojidoMap({
           데스크톱: 패널(420px) 왼쪽으로 비켜섬 / 모바일: 바텀시트가 지도를 거의 덮으므로 숨김
           (감춰진 채 클릭만 먹던 상태가 더 나빴다 — 없으면 없는 대로 보이게 한다) */}
       <div
-        className={`absolute bottom-4 z-40 flex-col gap-1.5 ${
-          panelOpen ? "right-4 hidden md:flex md:right-[436px]" : "right-4 flex"
-        }`}
+        className={`absolute bottom-4 z-40 flex-col gap-1.5 ${panelOpen ? "right-4 hidden md:flex md:right-[436px]" : "right-4 flex"
+          }`}
       >
         {[
           { t: "+", f: () => zoomAt({ x: MAP_W / 2, y: MAP_H / 2 }, 1.25), l: "확대" },

@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveUlsanMap } from "@/frontend/components/map/LiveUlsanMap";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -232,11 +233,13 @@ function MapContent() {
       <div className="relative flex-1 overflow-hidden bg-[#eaf5ff]">
         {/* 실제 지도 */}
         {!isLoading && !isError && (
-          <YeojidoMap
-            spots={shown}
-            selectedId={selected?.id ?? null}
-            onSelect={setSelected}
-          />
+          <div className="absolute inset-y-0 left-0 right-0 md:left-[324px]">
+            <LiveUlsanMap
+              spots={shown}
+              onSelect={setSelected}
+              scope={scope}
+            />
+          </div>
         )}
 
         {/* ─────────────────────────────
