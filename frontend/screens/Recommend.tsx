@@ -22,6 +22,7 @@ import {
   INTERESTS,
   type Companion,
   type Course,
+  type CourseStop,
   type Duration,
   type Interest,
   type WhaleSpot,
@@ -81,6 +82,19 @@ function estimateTaxiFareWon(distanceKm: number): number {
 
 function formatWon(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+/**
+ * 이동비 합계. 요금을 모르는 구간(버스 경로는 찾았지만 요금 정보가 없는 경우 등)을
+ * 0원으로 더해버리면 합계가 실제보다 싸 보인다. 몇 구간이 빠졌는지 함께 돌려준다.
+ */
+function sumFare(stops: CourseStop[]): { won: number; unknownLegs: number } {
+    const legs = stops.filter((s) => s.transportMode); // 하루 첫 지점은 이동이 없다
+
+    return {
+        won: legs.reduce((sum, s) => sum + (s.transportFareWon ?? 0), 0),
+        unknownLegs: legs.filter((s) => typeof s.transportFareWon !== "number").length,
+    };
 }
 
 function closingWarning(stop: Course["stops"][number]): string | null {
@@ -543,12 +557,12 @@ export default function RecommendPage() {
                 </ol>
                 <div className="mt-2 flex justify-end">
                   <span className="wy-chip rounded-[2px] bg-white px-2.5 py-1 text-[11px] font-semibold text-carbon">
-                    Day {day} 이동비 예상{" "}
-                    {formatWon(
-                      course.stops
-                        .filter((s) => s.day === day)
-                        .reduce((sum, s) => sum + (s.transportFareWon ?? 0), 0),
-                    )}
+                    {(() => {
+                      const { won, unknownLegs } = sumFare(
+                        course.stops.filter((s) => s.day === day),
+                      );
+                      return `Day ${day} 이동비 예상 ${formatWon(won)}${unknownLegs ? " +α" : ""}`;
+                    })()}
                   </span>
                 </div>
               </div>
@@ -564,14 +578,19 @@ export default function RecommendPage() {
                   </span>
 
                   <strong className="font-mono text-[17px] text-carbon">
-                    {formatWon(
-                      course.stops.reduce(
-                        (sum, stop) => sum + (stop.transportFareWon ?? 0),
-                        0,
-                      ),
+                    {formatWon(sumFare(course.stops).won)}
+                    {sumFare(course.stops).unknownLegs > 0 && (
+                      <span className="ml-0.5 text-[12px] text-carbon/60">+α</span>
                     )}
                   </strong>
                 </div>
+
+                {sumFare(course.stops).unknownLegs > 0 && (
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-carbon/60">
+                    요금 정보가 없는 구간 {sumFare(course.stops).unknownLegs}곳은 합계에서
+                    빠져 있어요(+α). 실제 이동비는 이보다 조금 더 듭니다.
+                  </p>
+                )}
 
                 <p className="mt-2 text-[10px] leading-relaxed text-carbon/60">
                   버스 요금은 ODsay 제공 정보를 사용하고, 택시는 직선거리 기준 예상 금액입니다.

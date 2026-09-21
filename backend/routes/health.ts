@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cacheStats } from "@/backend/lib/cache";
 import { getMetrics } from "@/backend/lib/metrics";
 import { getSpots, isMockMode } from "@/backend/lib/data";
+import { hasTransitKey, transitQuotaStatus } from "@/backend/lib/transit";
 
 // GET /api/health — 동작 모드·캐시·호출 메트릭 헬스체크 (내부 점검용, 공사 비노출).
 //
@@ -30,7 +31,11 @@ async function probeSpots(): Promise<{ state: "ok" | "empty" | "error" | "slow";
 }
 
 export async function GET() {
-  const [metrics, spots] = await Promise.all([getMetrics(), probeSpots()]);
+  const [metrics, spots, transitQuota] = await Promise.all([
+    getMetrics(),
+    probeSpots(),
+    transitQuotaStatus(),
+  ]);
 
   const calls = Object.values(metrics.byEndpoint).reduce((a, s) => a + s.calls, 0);
   const errors = Object.values(metrics.byEndpoint).reduce((a, s) => a + s.errors, 0);
@@ -48,6 +53,12 @@ export async function GET() {
       mode: isMockMode() ? "mock" : "live",
       cache: cacheStats(),
       metrics,
+      // 대중교통 안내는 부가 기능이라 ok 판정에는 넣지 않는다(꺼져도 서비스는 정상).
+      transit: {
+        enabled: hasTransitKey(),
+        ...transitQuota,
+        remaining: Math.max(0, transitQuota.limit - transitQuota.used),
+      },
       source: "공공데이터",
       ts: new Date().toISOString(),
     },
