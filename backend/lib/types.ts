@@ -225,6 +225,16 @@ export interface CourseStop {
   transportMode?: TransportMode; // 추천 이동수단. 하루 첫 지점은 없음.
   transportFareWon?: number;
   transportFareKind?: "odsay" | "estimate";
+  /**
+   * 기본 이동수단으로 채택하진 않았지만 참고로 보여줄 버스 경로.
+   * (울산은 배차 간격이 길어 버스가 있어도 택시가 현실적인 구간이 많다)
+   */
+  transitAlt?: {
+    travelMin: number;
+    transfers: number;
+    fareWon?: number;
+    intervalMin?: number;
+  };
 
   isPeak: boolean; // 기준 날짜 기준 제철인지
   openHours?: string; // 운영시간 라벨(예: "09:00~18:00", "상시 개방") — W7

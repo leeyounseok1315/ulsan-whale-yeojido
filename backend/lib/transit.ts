@@ -36,6 +36,12 @@ export interface TransitResult {
   walkM?: number;
   intervalMin?: number;
   payment?: number;
+  /**
+   * 코스의 기본 이동수단으로 삼아도 좋은 경로인지.
+   * 울산은 배차 간격이 길어 '버스가 있긴 하다'와 '버스로 가는 게 낫다'가 다르다.
+   * false면 화면에는 참고 정보로만 보여주고 일정은 택시 기준으로 유지한다.
+   */
+  recommended?: boolean;
   /** 미사용 사유 — "quota"면 한도 소진(경로가 없다는 뜻이 아니다). 진단·헬스용. */
   reason?: "no-key" | "no-route" | "quota" | "error";
 }
@@ -51,7 +57,13 @@ const UNAVAILABLE: TransitResult = { available: false };
 const DAILY_LIMIT = Number(process.env.ODSAY_DAILY_LIMIT ?? 30);
 const HIT_TTL_SEC = 7 * 24 * 60 * 60; // 경로 있음 — 버스 노선은 자주 바뀌지 않는다
 const MISS_TTL_SEC = 24 * 60 * 60; // 경로 없음 — 하루 뒤 재확인
-const KEY_PREFIX = "transit:v1";
+const KEY_PREFIX = "transit:v2"; // recommended 필드 추가 — 예전 캐시와 섞이지 않게
+
+/** 환승이 이보다 많으면 관광객에게 권하기 어렵다 — 후보에서 제외. */
+const MAX_TRANSFERS = 2;
+/** 여기까지면 코스의 기본 이동수단으로 삼는다. 그 밖은 참고 정보로만. */
+const GOOD_TRANSFERS = 1;
+const GOOD_INTERVAL_MIN = 40;
 
 /** ODsay 애플리케이션에 등록한 서비스 URI. 이 값이 Referer 로 전송된다. */
 const REFERER =
@@ -207,11 +219,16 @@ export async function fetchBusTransit(
     // API 자체 오류는 일시적일 수 있으므로 캐시하지 않는다(다음에 다시 물어본다).
     if (!res.ok || data.error) return { available: false, reason: "error" };
 
-    // 환승 1회 이하 · 배차 간격 40분 이하만 실제로 탈 만한 경로로 본다.
+    // 경로를 버리지 않고 '가장 나은 것'을 고른다. 예전엔 환승<=1·배차<=40분으로
+    // 걸렀는데, 울산 배차 간격이 길어 실제로는 전부 탈락해 버스가 영영 안 떴다.
+    // 대신 그 기준을 'recommended' 판정으로 옮겨, 기본 이동수단으로 쓸지만 가른다.
     const best = (data.result?.path ?? [])
       .map((path) => path.info)
-      .filter((info) => info.busTransitCount <= 1 && info.totalIntervalTime <= 40)
-      .sort((a, b) => a.totalTime - b.totalTime)[0];
+      .filter((info) => info.busTransitCount <= MAX_TRANSFERS)
+      .sort(
+        (a, b) =>
+          a.busTransitCount - b.busTransitCount || a.totalTime - b.totalTime,
+      )[0];
 
     if (!best) {
       const miss: TransitResult = { available: false, reason: "no-route" };
@@ -226,6 +243,9 @@ export async function fetchBusTransit(
       walkM: best.totalWalk,
       intervalMin: best.totalIntervalTime,
       payment: best.payment,
+      recommended:
+        best.busTransitCount <= GOOD_TRANSFERS &&
+        best.totalIntervalTime <= GOOD_INTERVAL_MIN,
     };
 
     await writeCache(key, result, HIT_TTL_SEC);

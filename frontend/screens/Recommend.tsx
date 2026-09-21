@@ -149,23 +149,44 @@ async function applyTransitToCourse(course: Course): Promise<Course> {
       transportFareKind = "estimate";
     }
 
-    // 서버에서 택시 후보로 잡힌 장거리 구간만 ODsay 버스 경로를 확인한다.
+    // 서버에서 택시 후보로 잡힌 장거리 구간만 버스 경로를 확인한다.
+    let transitAlt = stop.transitAlt;
+
     if (stop.transportMode === "taxi") {
       const transit = await getBusTransit(prev.spot, stop.spot);
 
       if (transit.available && transit.travelMin !== undefined) {
-        transportMode = "bus";
-        travelMin = transit.travelMin;
+        if (transit.recommended) {
+          // 환승 적고 배차도 촘촘한 경로 — 이건 실제로 버스로 가는 게 낫다.
+          transportMode = "bus";
+          travelMin = transit.travelMin;
+          transitAlt = undefined;
 
-        if (
-          typeof transit.payment === "number" &&
-          Number.isFinite(transit.payment)
-        ) {
-          transportFareWon = transit.payment;
-          transportFareKind = "odsay";
+          if (
+            typeof transit.payment === "number" &&
+            Number.isFinite(transit.payment)
+          ) {
+            transportFareWon = transit.payment;
+            transportFareKind = "odsay";
+          } else {
+            transportFareWon = undefined;
+            transportFareKind = undefined;
+          }
         } else {
-          transportFareWon = undefined;
-          transportFareKind = undefined;
+          // 버스가 있긴 하지만 배차·환승 탓에 택시가 현실적인 구간.
+          // 일정은 택시 기준으로 두고, 버스는 참고 정보로만 곁들인다.
+          transportMode = "taxi";
+          transportFareWon = estimateTaxiFareWon(stop.legKm);
+          transportFareKind = "estimate";
+          transitAlt = {
+            travelMin: transit.travelMin,
+            transfers: transit.transfers ?? 0,
+            fareWon:
+              typeof transit.payment === "number" && Number.isFinite(transit.payment)
+                ? transit.payment
+                : undefined,
+            intervalMin: transit.intervalMin,
+          };
         }
       } else {
         transportMode = "taxi";
@@ -198,6 +219,7 @@ async function applyTransitToCourse(course: Course): Promise<Course> {
       transportMode,
       transportFareWon,
       transportFareKind,
+      transitAlt,
     });
   }
 
@@ -510,6 +532,19 @@ export default function RecommendPage() {
                                     )}
                                   </span>
                                 )}
+
+                                {/* 택시로 잡았지만 버스 경로도 있는 구간 — 선택지를 함께 보여준다. */}
+                                {stop.transitAlt && (
+                                  <span className="wy-chip rounded-[2px] bg-white/70 px-1.5 py-0.5 font-mono text-[10px] text-carbon/70">
+                                    🚌 버스 {stop.transitAlt.travelMin}분
+                                    {stop.transitAlt.fareWon !== undefined &&
+                                      ` · ${formatWon(stop.transitAlt.fareWon)}`}
+                                    {stop.transitAlt.transfers > 0 &&
+                                      ` · 환승 ${stop.transitAlt.transfers}회`}
+                                    {stop.transitAlt.intervalMin !== undefined &&
+                                      ` · 배차 ${stop.transitAlt.intervalMin}분`}
+                                  </span>
+                                )}
                                 <span className="ml-auto wy-legend text-[10px] text-[color:var(--color-chrome)]">
                                   {stop.spot.contentTypeId === "39"
                                     ? stop.spot.cat3 === "A05020900"
@@ -593,8 +628,9 @@ export default function RecommendPage() {
                 )}
 
                 <p className="mt-2 text-[10px] leading-relaxed text-carbon/60">
-                  버스 요금은 ODsay 제공 정보를 사용하고, 택시는 직선거리 기준 예상 금액입니다.
-                  실제 도로거리·교통상황·할증에 따라 달라질 수 있습니다.
+                  택시는 직선거리 기준 예상 금액입니다. 실제 도로거리·교통상황·할증에 따라
+                  달라질 수 있습니다. 🚌 표시는 같은 구간의 대중교통 경로로, 배차 간격이 길어
+                  일정에는 택시를 기준으로 잡았습니다 — 시간 여유가 있다면 버스가 더 저렴합니다.
                 </p>
 
                 <p className="mt-1 text-[10px] leading-relaxed text-carbon/60">
