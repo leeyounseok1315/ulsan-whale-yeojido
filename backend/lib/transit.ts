@@ -53,6 +53,10 @@ const HIT_TTL_SEC = 7 * 24 * 60 * 60; // 경로 있음 — 버스 노선은 자�
 const MISS_TTL_SEC = 24 * 60 * 60; // 경로 없음 — 하루 뒤 재확인
 const KEY_PREFIX = "transit:v1";
 
+/** ODsay 애플리케이션에 등록한 서비스 URI. 이 값이 Referer 로 전송된다. */
+const REFERER =
+  process.env.ODSAY_REFERER ?? process.env.BASE_URL ?? "http://localhost:3000";
+
 /** 좌표는 약 11m 격자로 반올림 — 같은 스팟 쌍이 부동소수 오차로 캐시를 빗나가지 않게. */
 const grid = (n: number) => n.toFixed(4);
 
@@ -71,11 +75,11 @@ async function readCache(key: string): Promise<TransitResult | null> {
   if (redisAvailable()) {
     try {
       const raw = await redisCommand(["GET", key]);
-      if (raw) return JSON.parse(raw as string) as TransitResult;
+      return raw ? (JSON.parse(raw as string) as TransitResult) : null;
     } catch {
-      /* 캐시 실패는 조회 실패로 취급하지 않는다 */
+      // Redis 장애 — 인메모리 캐시로 내려간다(아래 공통 경로).
+      // 여기서 그냥 null을 돌려주면 캐시가 통째로 사라져 외부 호출이 매번 나간다.
     }
-    return null;
   }
 
   const hit = memCache.get(key);
@@ -91,10 +95,10 @@ async function writeCache(key: string, value: TransitResult, ttlSec: number) {
   if (redisAvailable()) {
     try {
       await redisCommand(["SET", key, JSON.stringify(value), "EX", ttlSec]);
+      return;
     } catch {
-      /* 캐시 쓰기 실패는 무시 — 다음 요청에서 다시 시도된다 */
+      // Redis 장애 — 인메모리에라도 남겨 같은 구간을 다시 묻지 않게 한다.
     }
-    return;
   }
   memCache.set(key, { at: Date.now(), ttl: ttlSec, value });
 }
@@ -114,16 +118,24 @@ async function claimCall(): Promise<boolean> {
       }
       return true;
     } catch {
-      return false; // 한도 확인이 불가능하면 호출하지 않는다(과금 방지 우선)
+      // Redis 장애 — 공유 카운터를 못 쓴다. 기능을 통째로 끄는 대신
+      // 프로세스 단위 인메모리 카운터로 내려간다(아래 공통 경로).
+      // 인스턴스가 여럿이면 합이 한도를 넘을 수 있으므로, 이 상태에서는
+      // 한도를 절반으로 낮춰 과금 위험을 줄인다.
+      return claimInMemory(Math.max(1, Math.floor(DAILY_LIMIT / 2)));
     }
   }
 
+  return claimInMemory(DAILY_LIMIT);
+}
+
+function claimInMemory(limit: number): boolean {
   const today = new Date().toISOString().slice(0, 10);
   if (memDay !== today) {
     memDay = today;
     memCalls = 0;
   }
-  if (memCalls >= DAILY_LIMIT) return false;
+  if (memCalls >= limit) return false;
   memCalls += 1;
   return true;
 }
@@ -181,7 +193,13 @@ export async function fetchBusTransit(
   try {
     const res = await fetch(
       `https://api.odsay.com/v1/api/searchPubTransPathT?${params.toString()}`,
-      { cache: "no-store" },
+      {
+        cache: "no-store",
+        // ODsay는 등록된 서비스 URI 와 Referer 를 대조해 인증한다.
+        // 서버에서 부르면 브라우저처럼 Referer 가 자동으로 붙지 않아
+        // ApiKeyAuthFailed 로 거부된다 — 등록한 도메인을 명시해 준다.
+        headers: { Referer: REFERER },
+      },
     );
 
     const data = (await res.json()) as ODsayResponse;

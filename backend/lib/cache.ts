@@ -21,15 +21,35 @@ export function cacheBackend(): "redis" | "memory" {
   return useRedis ? "redis" : "memory";
 }
 
+// 환경변수가 있다고 Redis가 살아있는 건 아니다. 실제 통신 성패를 기록해두고
+// 헬스체크가 '연결됐다고 착각한 상태'를 그대로 보고하지 않게 한다.
+// (DB를 지웠는데 URL만 남아 NXDOMAIN이 나던 사고가 있었다 — 그때도 backend는 "redis"라고 보고했다)
+let redisHealthy: boolean | null = null; // null = 아직 시도 안 함
+let redisLastError: string | null = null;
+
 async function redisCmd(cmd: (string | number)[]): Promise<unknown> {
-  const res = await fetch(UP_URL!, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${UP_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(cmd),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`);
-  return (await res.json()).result;
+  try {
+    const res = await fetch(UP_URL!, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${UP_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(cmd),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`);
+    const out = (await res.json()).result;
+    redisHealthy = true;
+    redisLastError = null;
+    return out;
+  } catch (err) {
+    redisHealthy = false;
+    redisLastError = err instanceof Error ? err.message : String(err);
+    throw err;
+  }
+}
+
+/** 실제로 한 번이라도 통신에 성공했는지. null이면 아직 시도 전. */
+export function redisHealth(): { configured: boolean; healthy: boolean | null; lastError: string | null } {
+  return { configured: useRedis, healthy: redisHealthy, lastError: redisLastError };
 }
 
 /** 다른 모듈(메트릭 등)이 같은 Upstash 연결을 재사용하도록 노출. */
@@ -170,6 +190,9 @@ export async function purgeTag(tag: string): Promise<number> {
 export function cacheStats() {
   return {
     backend: cacheBackend(),
+    // 설정만 됐는지가 아니라 실제로 통신이 되는지. null이면 이번 인스턴스에서 아직 시도 전.
+    redisHealthy: useRedis ? redisHealthy : null,
+    redisError: useRedis ? redisLastError : null,
     version: CACHE_VERSION,
     memKeys: mem.size,
     snapshots: snapshots.size,
