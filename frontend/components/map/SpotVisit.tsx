@@ -424,14 +424,14 @@ export function SpotVisit({
 
                   {d.sourceModifiedAt && (
                     <InfoChip
-                      label="TourAPI 정보 수정일"
+                      label="정보 수정일"
                       value={formatSourceModifiedAt(d.sourceModifiedAt)}
                     />
                   )}
                 </div>
 
                 <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-white/65">
-                  자료 출처 · 한국관광공사 TourAPI
+                  자료 출처 · 공공데이터
                 </p>
               </div>
             )}
