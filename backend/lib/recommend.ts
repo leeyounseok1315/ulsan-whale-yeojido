@@ -769,12 +769,29 @@ export function buildCourse(
   // 크루즈 운항 안내 — 실제로 코스에 들어갔을 때만 '넣었다'고 한다.
   if (isSeasonOpen(CRUISE_SEASON, onDate)) {
     const cruise = routed.find((s) => s.seasonal === CRUISE_SEASON);
+    // 운항 시즌이어도 기준일이 휴항일이면 '가보라'고 권하지 않는다.
+    // (권하면 아래 '○요일에 문 닫는 곳은 빼고 코스를 짰어요' 안내와 정면으로 모순된다)
+    const closedToday =
+      !cruise && closedByRest.some((s) => s.seasonal === CRUISE_SEASON);
+
     if (en) {
       const season = `The whale-watching cruise runs this season (${monthRangeLabel(CRUISE_SEASON.openMonths, "en")}).`;
-      seasonNotes.push(cruise ? `${season} We added the sea route to your course.` : `${season} Fit it in if you have time.`);
+      seasonNotes.push(
+        cruise
+          ? `${season} We added the sea route to your course.`
+          : closedToday
+            ? `${season} It doesn't sail on this date, so we left it out of this course.`
+            : `${season} Fit it in if you have time.`,
+      );
     } else {
       const season = `${CRUISE_SEASON.label} 시즌이에요 (${openRangeLabel(CRUISE_SEASON)}).`;
-      seasonNotes.push(cruise ? `${season} 바다 위 코스를 추천에 넣었어요.` : `${season} 시간이 되면 함께 둘러보세요.`);
+      seasonNotes.push(
+        cruise
+          ? `${season} 바다 위 코스를 추천에 넣었어요.`
+          : closedToday
+            ? `${season} 다만 이 날짜에는 휴항이라 코스에서는 뺐어요.`
+            : `${season} 시간이 되면 함께 둘러보세요.`,
+      );
     }
   } else if (!closedSeasonal.some((s) => s.seasonal === CRUISE_SEASON)) {
     // 휴지기인데 크루즈가 스팟 목록에 아예 없던 경우에만 일반 안내(있었다면 위에서 개별 안내됨).

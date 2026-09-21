@@ -28,9 +28,18 @@ export async function GET(req: NextRequest) {
     lon = spot.lon;
     lat = spot.lat;
   } else {
-    lon = Number(sp.get("lon"));
-    lat = Number(sp.get("lat"));
-    if (!Number.isFinite(lon) || !Number.isFinite(lat) || (!lon && !lat)) {
+    // 한쪽만 빠져도 거절한다. Number(null)·Number("")이 0이 되는 탓에
+    // 예전 검사(!lon && !lat)는 lon 누락 시 좌표 0을 그대로 통과시켜,
+    // 엉뚱한 바다 한가운데를 조회하고 빈 목록을 200으로 돌려줬다.
+    const lonRaw = sp.get("lon");
+    const latRaw = sp.get("lat");
+    lon = Number(lonRaw);
+    lat = Number(latRaw);
+
+    const missing = !lonRaw?.trim() || !latRaw?.trim();
+    const outOfRange = Math.abs(lat) > 90 || Math.abs(lon) > 180;
+
+    if (missing || !Number.isFinite(lon) || !Number.isFinite(lat) || outOfRange) {
       return NextResponse.json({ error: "spotId 또는 lon·lat 좌표가 필요해요." }, { status: 400 });
     }
   }

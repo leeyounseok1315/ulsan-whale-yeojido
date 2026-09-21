@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+// 외부 이미지는 서버 프록시 경유 — 클라이언트가 출처 도메인을 직접 요청하지 않게 한다.
+// (절대규칙 #1 · backend/routes/img.ts 와 동일한 의도. 로컬 경로는 그대로 둔다.)
+const proxied = (src: string) =>
+    /^https?:\/\//.test(src) ? `/api/img?u=${encodeURIComponent(src)}` : src;
+
 type SpotItem = {
     title: string;
     desc: string;
@@ -100,7 +105,7 @@ export function SpotCarousel({
             "
                     >
                         <img
-                            src={spot.image}
+                            src={proxied(spot.image)}
                             alt={spot.title}
                             className="
                 absolute

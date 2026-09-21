@@ -1,4 +1,5 @@
 import type { WhaleTheme, WhaleThemeId } from "./types";
+import { CRUISE_SEASON, openRangeLabel } from "./season";
 
 /** 고래 테마 4분류 — 콘텐츠 조직·내비게이션·범례의 기준 (행정구역 아님). */
 export const WHALE_THEMES: Record<WhaleThemeId, WhaleTheme> = {
@@ -11,7 +12,8 @@ export const WHALE_THEMES: Record<WhaleThemeId, WhaleTheme> = {
   observe: {
     id: "observe",
     label: "고래 관찰",
-    blurb: "고래바다여행선 — 바다 위 고래의 시선 (4~10월)",
+    // 운항 기간은 CRUISE_SEASON 한 곳에서만 관리한다(문구 하드코딩 시 규칙과 어긋난 전례 있음).
+    blurb: `고래바다여행선 — 바다 위 고래의 시선 (${openRangeLabel(CRUISE_SEASON)})`,
     tone: "water",
   },
   heritage: {

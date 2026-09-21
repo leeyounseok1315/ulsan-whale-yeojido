@@ -157,7 +157,7 @@ export const INTEREST_LABEL: Record<Interest, string> = {
 export const INTERESTS: Interest[] = ["history", "nature", "experience", "observation", "food"];
 
 export interface SeasonRule {
-  openMonths: number[]; // 1~12. 예: 고래바다여행선 4~10월
+  openMonths: number[]; // 1~12. 예: 고래바다여행선 4~11월
   label: string;
   closedNote: string;
 }

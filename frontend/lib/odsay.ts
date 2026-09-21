@@ -1,37 +1,11 @@
 import type { WhaleSpot } from "@/backend/lib/types";
+import type { TransitResult } from "@/backend/lib/transit";
 
-interface ODsayPathInfo {
-    totalTime: number;
-    totalWalk: number;
-    busTransitCount: number;
-    totalIntervalTime: number;
-    checkIntervalTimeOverYn?: string;
-    payment?: number;
-}
+// 대중교통 경로는 서버 BFF(/api/transit)로만 조회한다.
+// 외부 API 키는 서버에만 두므로 클라이언트 번들에 들어가지 않는다(절대규칙 #2).
+// 여기서는 결과를 브라우저에 24시간 캐시해 같은 구간 재조회를 줄인다.
 
-interface ODsayPath {
-    pathType: number;
-    info: ODsayPathInfo;
-}
-
-interface ODsayResponse {
-    result?: {
-        path?: ODsayPath[];
-    };
-    error?: Array<{
-        code: string;
-        message: string;
-    }>;
-}
-
-export interface TransitResult {
-    available: boolean;
-    travelMin?: number;
-    transfers?: number;
-    walkM?: number;
-    intervalMin?: number;
-    payment?: number;
-}
+export type { TransitResult };
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24시간
 
@@ -50,10 +24,10 @@ function readTransitCache(
 ): TransitResult | null {
     if (typeof window === "undefined") return null;
 
-    const raw = localStorage.getItem(cacheKey(from, to));
-    if (!raw) return null;
-
     try {
+        const raw = localStorage.getItem(cacheKey(from, to));
+        if (!raw) return null;
+
         const cached = JSON.parse(raw) as TransitCache;
 
         if (Date.now() - cached.savedAt > CACHE_TTL_MS) {
@@ -63,6 +37,7 @@ function readTransitCache(
 
         return cached.result;
     } catch {
+        // 사생활 보호 모드 등 localStorage 접근 자체가 막히는 경우까지 삼킨다.
         return null;
     }
 }
@@ -79,10 +54,11 @@ function writeTransitCache(
         result,
     };
 
-    localStorage.setItem(
-        cacheKey(from, to),
-        JSON.stringify(cached),
-    );
+    try {
+        localStorage.setItem(cacheKey(from, to), JSON.stringify(cached));
+    } catch {
+        // 용량 초과·접근 차단 시 캐시만 포기하고 기능은 계속 동작시킨다.
+    }
 }
 
 export async function getBusTransit(
@@ -95,67 +71,22 @@ export async function getBusTransit(
         return cached;
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_ODSAY_API_KEY;
-
-    if (!apiKey) {
-        return { available: false };
-    }
-
     const params = new URLSearchParams({
-        SX: String(from.lon),
-        SY: String(from.lat),
-        EX: String(to.lon),
-        EY: String(to.lat),
-        SearchType: "0",
-        SearchPathType: "2",
-        OPT: "0",
-        apiKey,
+        sx: String(from.lon),
+        sy: String(from.lat),
+        ex: String(to.lon),
+        ey: String(to.lat),
     });
 
     try {
-        const res = await fetch(
-            `https://api.odsay.com/v1/api/searchPubTransPathT?${params.toString()}`,
-        );
+        const res = await fetch(`/api/transit?${params.toString()}`);
 
-        const data = (await res.json()) as ODsayResponse;
-
-        // API 자체 오류는 일시적일 수 있으므로 캐시하지 않는다.
-        if (!res.ok || data.error) {
+        if (!res.ok) {
+            // 일시적 오류일 수 있으므로 캐시하지 않는다.
             return { available: false };
         }
 
-        // 정상 응답이지만 대중교통 경로가 없는 경우만 캐시한다.
-        if (!data.result?.path?.length) {
-            const result: TransitResult = { available: false };
-            writeTransitCache(from, to, result);
-            return result;
-        }
-
-        const usable = data.result.path
-            .map((path) => path.info)
-            .filter(
-                (info) =>
-                    info.busTransitCount <= 1 &&
-                    info.totalIntervalTime <= 40,
-            )
-            .sort((a, b) => a.totalTime - b.totalTime);
-
-        const best = usable[0];
-
-        if (!best) {
-            const result: TransitResult = { available: false };
-            writeTransitCache(from, to, result);
-            return result;
-        }
-
-        const result: TransitResult = {
-            available: true,
-            travelMin: best.totalTime,
-            transfers: best.busTransitCount,
-            walkM: best.totalWalk,
-            intervalMin: best.totalIntervalTime,
-            payment: best.payment,
-        };
+        const result = (await res.json()) as TransitResult;
 
         writeTransitCache(from, to, result);
 
